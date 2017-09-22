@@ -116,17 +116,20 @@ let
       ++ optional pulseSupport libpulseaudio;
 
     patches = [
-      ./patches/nix_plugin_paths_52.patch
-      ./patches/chromium-gn-bootstrap-r14.patch
-      ./patches/chromium-gcc-r1.patch
-      ./patches/chromium-atk-r1.patch
-      ./patches/chromium-gcc5-r1.patch
       ./patches/ccap-chromium-pdf-viewer.patch
+      ./patches/nix_plugin_paths_52.patch
       # To enable ChromeCast, go to chrome://flags and set "Load Media Router Component Extension" to Enabled
       # Fixes Chromecast: https://bugs.chromium.org/p/chromium/issues/detail?id=734325
       ./patches/fix_network_api_crash.patch
 
-    ] ++ optional enableWideVine ./patches/widevine.patch;
+    ] ++ optional enableWideVine ./patches/widevine.patch
+      ++ optionals (version < "62.0.3202.9") [
+        ./patches/chromium-gn-bootstrap-r14.patch
+        ./patches/chromium-gcc-r1.patch
+        ./patches/chromium-atk-r1.patch
+        ./patches/chromium-gcc5-r1.patch
+      ];
+
 
     postPatch = ''
       # We want to be able to specify where the sandbox is via CHROME_DEVEL_SANDBOX
