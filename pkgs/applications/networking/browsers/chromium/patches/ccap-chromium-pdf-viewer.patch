@@ -1,0 +1,270 @@
+diff --git a/chrome/browser/resources/pdf/pdf.js b/chrome/browser/resources/pdf/pdf.js
+index ffc2a49..2ea1aa0 100644
+--- a/chrome/browser/resources/pdf/pdf.js
++++ b/chrome/browser/resources/pdf/pdf.js
+@@ -98,6 +98,7 @@ function PDFViewer(browserApi) {
+   this.parentWindow_ = null;
+   this.parentOrigin_ = null;
+   this.isFormFieldFocused_ = false;
++  this.enabledMessages_ = null;
+
+   this.delayedScriptingMessages_ = [];
+
+@@ -132,6 +133,7 @@ function PDFViewer(browserApi) {
+   var shortWindow = window.innerHeight < PDFViewer.TOOLBAR_WINDOW_MIN_HEIGHT;
+   var topToolbarHeight =
+       (toolbarEnabled) ? PDFViewer.MATERIAL_TOOLBAR_HEIGHT : 0;
++  this.topToolbarHeight_ = topToolbarHeight;
+   var defaultZoom =
+       this.browserApi_.getZoomBehavior() == BrowserApi.ZoomBehavior.MANAGE ?
+       this.browserApi_.getDefaultZoom() :
+@@ -423,6 +425,10 @@ PDFViewer.prototype = {
+    */
+   rotateClockwise_: function() {
+     this.plugin_.postMessage({type: 'rotateClockwise'});
++
++    this.sendScriptingMessage_({
++      type: 'rotateClockwise'
++    });
+   },
+
+   /**
+@@ -431,6 +437,10 @@ PDFViewer.prototype = {
+    */
+   rotateCounterClockwise_: function() {
+     this.plugin_.postMessage({type: 'rotateCounterclockwise'});
++
++    this.sendScriptingMessage_({
++      type: 'rotateCounterclockwise'
++    });
+   },
+
+   /**
+@@ -796,6 +806,21 @@ PDFViewer.prototype = {
+       viewportWidth: size.width,
+       viewportHeight: size.height
+     });
++
++    var pages = this.viewport_.getVisiblePages();
++    var rects = pages.map(page => {
++      var rect = Object.assign({}, this.viewport_.getPageScreenRect(page));
++      rect.y += this.topToolbarHeight_;
++      return { page: page, rect: rect, dimensions: this.viewport_.getInsetPageDimensions(page) };
++    });
++    this.sendScriptingMessage_({
++      type: 'visible',
++      pages: rects,
++      viewportWidth: size.width,
++      viewportHeight: size.height,
++      browserZoom: this.zoomManager_.applyBrowserZoom(1),
++      internalZoom: this.viewport_.internalZoom
++    });
+   },
+
+   /**
+@@ -824,6 +849,18 @@ PDFViewer.prototype = {
+     }
+
+     switch (message.data.type.toString()) {
++      case 'goToPage':
++        this.viewport_.goToPage(message.data.page, message.data.offset);
++        break;
++      case 'enableMessages':
++        this.enabledMessages_ = message.data.messageTypes;
++        break;
++      case 'echo':
++        this.sendScriptingMessage_({
++          type: 'echo',
++          data: message.data.data
++        });
++        break;
+       case 'getSelectedText':
+       case 'print':
+       case 'selectAll':
+@@ -904,7 +941,10 @@ PDFViewer.prototype = {
+         targetOrigin = '*';
+       else
+         targetOrigin = this.originalUrl_;
+-      this.parentWindow_.postMessage(message, targetOrigin);
++      if (! this.enabledMessages_ || this.enabledMessages_.includes(message.type)) {
++        message.originalUrl = this.originalUrl_;
++        this.parentWindow_.postMessage(message, targetOrigin);
++      }
+     }
+   },
+
+diff --git a/chrome/browser/resources/pdf/viewport.js b/chrome/browser/resources/pdf/viewport.js
+index 358922c..c5ebbff 100644
+--- a/chrome/browser/resources/pdf/viewport.js
++++ b/chrome/browser/resources/pdf/viewport.js
+@@ -470,6 +470,49 @@ Viewport.prototype = {
+     return 0;
+   },
+
++  get internalZoom() {
++    return this.internalZoom_;
++  },
++
++
++  getInsetPageDimensions(page) {
++    var pageDimensions = this.pageDimensions_[page];
++    return {
++      x: pageDimensions.x + Viewport.PAGE_SHADOW.left,
++      y: pageDimensions.y + Viewport.PAGE_SHADOW.top,
++      width: pageDimensions.width - Viewport.PAGE_SHADOW.left -
++          Viewport.PAGE_SHADOW.right,
++      height: pageDimensions.height - Viewport.PAGE_SHADOW.top -
++          Viewport.PAGE_SHADOW.bottom
++    };
++  },
++
++  getVisiblePages: function() {
++    var firstVisiblePage = this.getPageAtY_(this.position.y / this.zoom);
++    var result = [ firstVisiblePage ];
++
++    var viewportRect = {
++      x: this.position.x / this.zoom,
++      y: this.position.y / this.zoom,
++      width: this.size.width / this.zoom,
++      height: this.size.height / this.zoom
++    };
++
++    var current = firstVisiblePage + 1;
++    while (current < this.pageDimensions_.length) {
++      var nextPageVisibility = getIntersectionHeight(
++          this.pageDimensions_[current], viewportRect) /
++          this.pageDimensions_[current].height;
++      if (nextPageVisibility > 0) {
++        result.push(current);
++      } else {
++        break;
++      }
++      current++;
++    }
++    return result;
++  },
++
+   /**
+    * Returns the page with the greatest proportion of its height in the current
+    * viewport.
+@@ -720,7 +763,7 @@ Viewport.prototype = {
+    * Go to the given page index.
+    * @param {number} page the index of the page to go to. zero-based.
+    */
+-  goToPage: function(page) {
++  goToPage: function(page, offset_) {
+     this.mightZoom_(() => {
+       if (this.pageDimensions_.length === 0)
+         return;
+@@ -730,6 +773,14 @@ Viewport.prototype = {
+         page = this.pageDimensions_.length - 1;
+       var dimensions = this.pageDimensions_[page];
+       var toolbarOffset = 0;
++
++      var offset;
++      if (typeof offset_ === "undefined"
++          || this.fittingType_ === Viewport.FittingType.FIT_TO_PAGE)
++        offset = 0;
++      else
++        offset = offset_;
++
+       // Unless we're in fit to page mode, scroll above the page by
+       // |this.topToolbarHeight_| so that the toolbar isn't covering it
+       // initially.
+@@ -737,7 +788,7 @@ Viewport.prototype = {
+         toolbarOffset = this.topToolbarHeight_;
+       this.position = {
+         x: dimensions.x * this.zoom,
+-        y: dimensions.y * this.zoom - toolbarOffset
++        y: (dimensions.y + dimensions.height * offset) * this.zoom - toolbarOffset
+       };
+       this.updateViewport_();
+     });
+diff --git a/tools/grit/grit/format/ccappatch.py b/tools/grit/grit/format/ccappatch.py
+new file mode 100644
+index 0000000..f321bb8
+--- /dev/null
++++ b/tools/grit/grit/format/ccappatch.py
+@@ -0,0 +1,82 @@
++#!/usr/bin/env python
++
++import argparse
++import os
++import re
++import sys
++import tempfile
++import shutil
++
++if __name__ == '__main__':
++  sys.path.append(os.path.join(os.path.dirname(__file__), '../..'))
++
++from grit.format.data_pack import DataPack
++
++def matchon(res, data, s, v):
++  if s in data:
++    if v:
++      raise Exception(
++          "Found match on " + str(res) +
++          " looking for '" + s + "'" +
++          ", but already found another match on " + str(res))
++    return res
++  else:
++    return v
++
++def writeres(contents, res, path):
++  with open(path, 'wb') as f:
++    f.write(contents.resources[res])
++
++def updateres(contents, res, path):
++  with open(path, 'rb') as f:
++    contents.resources[res] = f.read()
++
++def main():
++  parser = argparse.ArgumentParser(
++      description='Patch resources.pak with CCAP changes')
++  parser.add_argument('--input', help='input file', required=True)
++  parser.add_argument('--output', help='output file', required=True)
++  parser.add_argument('--patch', help='patch file', required=True)
++
++  args = parser.parse_args()
++
++  print "reading", args.input
++  contents = DataPack.ReadDataPack(args.input)
++
++  viewportRes = None
++  pdfRes = None
++
++  for res, data in contents.resources.iteritems():
++    viewportRes = matchon(res, data, "\nfunction Viewport(", viewportRes)
++    pdfRes = matchon(res, data, "\nfunction PDFViewer(", pdfRes)
++
++  if not viewportRes:
++    raise Exception("Could not find resource ID for viewport.js")
++  if not pdfRes:
++    raise Exception("Could not find resource ID for pdf.js")
++
++  path = tempfile.mkdtemp()
++  print "writing files to", path
++
++  writeres(contents, pdfRes, path + "/pdf.js")
++  writeres(contents, viewportRes, path + "/viewport.js")
++
++  print "running patch"
++  p = os.getcwd()
++  os.chdir(path)
++  exitcode = os.system("patch -p5 < " + args.patch)
++  os.chdir(p)
++
++  if exitcode != 0:
++    raise Exception("patch command failed")
++
++  updateres(contents, pdfRes, path + "/pdf.js")
++  updateres(contents, viewportRes, path + "/viewport.js")
++
++  shutil.rmtree(path)
++
++  print "writing output"
++  DataPack.WriteDataPack(contents.resources, args.output, contents.encoding)
++
++if __name__ == '__main__':
++  main()

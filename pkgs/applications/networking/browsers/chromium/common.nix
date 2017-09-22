@@ -121,6 +121,7 @@ let
       ./patches/chromium-gcc-r1.patch
       ./patches/chromium-atk-r1.patch
       ./patches/chromium-gcc5-r1.patch
+      ./patches/ccap-chromium-pdf-viewer.patch
       # To enable ChromeCast, go to chrome://flags and set "Load Media Router Component Extension" to Enabled
       # Fixes Chromecast: https://bugs.chromium.org/p/chromium/issues/detail?id=734325
       ./patches/fix_network_api_crash.patch
