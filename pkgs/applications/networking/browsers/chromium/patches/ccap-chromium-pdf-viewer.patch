@@ -153,7 +153,7 @@ index 358922c..c5ebbff 100644
     */
 -  goToPage: function(page) {
 +  goToPage: function(page, offset_) {
-     this.mightZoom_(() => {
+     this.mightZoom_(function() {
        if (this.pageDimensions_.length === 0)
          return;
 @@ -730,6 +773,14 @@ Viewport.prototype = {
