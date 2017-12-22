@@ -135,6 +135,14 @@ in rec {
     ];
   });
 
+  netboot_aij = forTheseSystems [ "x86_64-linux" ] (system: makeNetboot {
+    inherit system;
+    modules = [
+      ./modules/installer/netboot/netboot-aij.nix
+      versionModule
+    ];
+  });
+
   iso_minimal = forAllSystems (system: makeIso {
     module = ./modules/installer/cd-dvd/installation-cd-minimal.nix;
     type = "minimal";
