@@ -106,7 +106,7 @@ in rec {
   netboot.x86_64-linux = let build = (import lib/eval-config.nix {
       system = "x86_64-linux";
       modules = [
-        ./modules/installer/netboot/netboot-minimal.nix
+        ./modules/installer/netboot/netboot-aij.nix
         versionModule
       ];
     }).config.system.build;
