@@ -12751,6 +12751,8 @@ with pkgs;
 
   raspberrypifw = callPackage ../os-specific/linux/firmware/raspberrypi {};
 
+  rdma-core = callPackage ../os-specific/linux/rdma-core { };
+
   regionset = callPackage ../os-specific/linux/regionset { };
 
   rfkill = callPackage ../os-specific/linux/rfkill { };
