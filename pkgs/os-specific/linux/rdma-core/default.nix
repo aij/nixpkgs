@@ -1,28 +1,32 @@
-{ stdenv, fetchFromGitHub, cmake, ninja, pkgconfig, valgrind, libudev, libnl, python, systemd, linuxHeaders }:
+{ stdenv, fetchFromGitHub, cmake, pkgconfig
+, ethtool, libnl, libudev, python, perl
+} :
 
-stdenv.mkDerivation rec {
+let
+  version = "16.1";
+
+in stdenv.mkDerivation {
   name = "rdma-core-${version}";
-  version = "16";
 
   src = fetchFromGitHub {
     owner = "linux-rdma";
     repo = "rdma-core";
     rev = "v${version}";
-    sha256 = "131gckfnb0flcyy27nc6kjpk17cmadjwv7rpsg1g0lbrx83b7irl";
+    sha256 = "1fixw6hpf732vzlpczx0b2y84jrhgfjr3cljqxky7makzgh2s7ng";
   };
 
-  nativeBuildInputs = [ cmake ninja pkgconfig valgrind python ];
+  nativeBuildInputs = [ cmake pkgconfig ];
+  buildInputs = [ libnl ethtool libudev python perl ];
 
-  buildInputs = [ libudev libnl systemd linuxHeaders ];
-
-  cmakeFlags = "-GNinja";
+  postFixup = ''
+    substituteInPlace $out/bin/rxe_cfg --replace ethtool "${ethtool}/bin/ethtool"
+  '';
 
   meta = with stdenv.lib; {
-    description = "Userspace libraries and daemons for Infiniband on Linux";
-    homepage = http://linux-rdma.org/;
-    # Mostly dual license gpl2 or mit, w/ various bsd variants for subcomponents.
-    license =  licenses.free;
-    maintainers = [ maintainers.aij ];
-    platforms = [ "x86_64-linux" ];
+    description = "RDMA Core Userspace Libraries and Daemons";
+    homepage = https://github.com/linux-rdma/rdma-core;
+    license = licenses.gpl2;
+    maintainers = with maintainers; [ markuskowa ];
   };
 }
+
