@@ -2677,6 +2677,8 @@ with pkgs;
 
   inetutils = callPackage ../tools/networking/inetutils { };
 
+  infiniband-diags = callPackage ../tools/networking/infiniband-diags { };
+
   inform7 = callPackage ../development/compilers/inform7 { };
 
   innoextract = callPackage ../tools/archivers/innoextract { };
@@ -3675,6 +3677,8 @@ with pkgs;
   opensc = callPackage ../tools/security/opensc {
     inherit (darwin.apple_sdk.frameworks) Carbon;
   };
+
+  opensm = callPackage ../tools/networking/opensm { };
 
   openssh =
     callPackage ../tools/networking/openssh {
@@ -12833,6 +12837,8 @@ with pkgs;
   radeontop = callPackage ../os-specific/linux/radeontop { };
 
   raspberrypifw = callPackage ../os-specific/linux/firmware/raspberrypi {};
+
+  rdma-core = callPackage ../os-specific/linux/rdma-core { };
 
   regionset = callPackage ../os-specific/linux/regionset { };
 
