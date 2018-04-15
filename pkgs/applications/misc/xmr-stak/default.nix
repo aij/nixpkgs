@@ -7,13 +7,13 @@
 
 stdenv.mkDerivation rec {
   name = "xmr-stak-${version}";
-  version = "2.3.0";
+  version = "2.4.2";
 
   src = fetchFromGitHub {
     owner = "fireice-uk";
     repo = "xmr-stak";
     rev = "${version}";
-    sha256 = "1iisy73pi4xx3vmqvy6whdzb566jqyjx4pdyx0g35qjj8giflpc8";
+    sha256 = "0yy2h7isbmlnbcj3d4vh80ljs4hwa591acw8zg1jpin4fgcls139";
   };
 
   NIX_CFLAGS_COMPILE = "-O3";
