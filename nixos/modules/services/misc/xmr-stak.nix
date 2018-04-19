@@ -12,6 +12,8 @@ let
 
   xmrConfArg = optionalString (cfg.configText != "") ("-c " +
     pkgs.writeText "xmr-stak-config.txt" cfg.configText);
+  xmrPoolArg = optionalString (cfg.poolConfigText != "") ("--poolconf " +
+    pkgs.writeText "xmr-stak-pools.txt" cfg.poolConfigText);
 
 in
 
@@ -33,6 +35,21 @@ in
         type = types.lines;
         default = "";
         example = ''
+          "daemon_mode" : true,
+          "h_print_time" : 600,
+          "verbose_level" : 4,
+          "httpd_port" : 0,
+        '';
+        description = ''
+          Verbatim xmr-stak config.txt. If empty, the <literal>-c</literal>
+          parameter will not be added to the xmr-stak command.
+        '';
+      };
+
+      poolConfigText = mkOption {
+        type = types.lines;
+        default = "";
+        example = ''
           "currency" : "monero",
           "pool_list" :
             [ { "pool_address" : "pool.supportxmr.com:5555",
@@ -43,9 +60,24 @@ in
             ],
         '';
         description = ''
-          Verbatim xmr-stak config.txt. If empty, the <literal>-c</literal>
+          Verbatim xmr-stak pool.txt. If empty, the <literal>--poolconf</literal>
           parameter will not be added to the xmr-stak command.
         '';
+      };
+
+      niceness = mkOption {
+        type = types.int;
+        default = 0;
+        example = 10;
+        description = "Niceness adjustment";
+      };
+      extraServiceConfig = mkOption {
+        type = types.attrs;
+        default = {};
+        example = {
+          LimitMEMLOCK = "256M";
+        };
+        description = "Extra options for the systemd service config.";
       };
     };
   };
@@ -59,15 +91,15 @@ in
         LD_LIBRARY_PATH = "${pkgs.linuxPackages_latest.nvidia_x11}/lib";
       };
       script = ''
-        exec ${pkg}/bin/xmr-stak ${xmrConfArg} ${concatStringsSep " " cfg.extraArgs}
+        exec nice -n ${toString cfg.niceness} ${pkg}/bin/xmr-stak ${xmrConfArg} ${xmrPoolArg} ${concatStringsSep " " cfg.extraArgs}
       '';
       serviceConfig = let rootRequired = cfg.openclSupport || cfg.cudaSupport; in {
         # xmr-stak generates cpu and/or gpu configuration files
         WorkingDirectory = "/tmp";
         PrivateTmp = true;
         DynamicUser = !rootRequired;
-        LimitMEMLOCK = toString (1024*1024);
-      };
+        LimitMEMLOCK = "128M";
+      } // cfg.extraServiceConfig;
     };
   };
 }
