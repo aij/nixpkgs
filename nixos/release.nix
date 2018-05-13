@@ -145,7 +145,7 @@ in rec {
     ];
   });
 
-  netboot_aij = forTheseSystems [ "x86_64-linux" ] (system: makeNetboot {
+  netboot_aij = forMatchingSystems [ "x86_64-linux" ] (system: makeNetboot {
     inherit system;
     modules = [
       ./modules/installer/netboot/netboot-aij.nix
