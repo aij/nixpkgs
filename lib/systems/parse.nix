@@ -69,19 +69,30 @@ rec {
   cpuTypes = with significantBytes; setTypes types.openCpuType {
     arm      = { bits = 32; significantByte = littleEndian; family = "arm"; };
     armv5tel = { bits = 32; significantByte = littleEndian; family = "arm"; };
+    armv6m   = { bits = 32; significantByte = littleEndian; family = "arm"; };
     armv6l   = { bits = 32; significantByte = littleEndian; family = "arm"; };
     armv7a   = { bits = 32; significantByte = littleEndian; family = "arm"; };
+    armv7r   = { bits = 32; significantByte = littleEndian; family = "arm"; };
+    armv7m   = { bits = 32; significantByte = littleEndian; family = "arm"; };
     armv7l   = { bits = 32; significantByte = littleEndian; family = "arm"; };
-    aarch64  = { bits = 64; significantByte = littleEndian; family = "aarch64"; };
+    armv8a   = { bits = 32; significantByte = littleEndian; family = "arm"; };
+    armv8r   = { bits = 32; significantByte = littleEndian; family = "arm"; };
+    armv8m   = { bits = 32; significantByte = littleEndian; family = "arm"; };
+    aarch64  = { bits = 64; significantByte = littleEndian; family = "arm"; };
+
     i686     = { bits = 32; significantByte = littleEndian; family = "x86"; };
     x86_64   = { bits = 64; significantByte = littleEndian; family = "x86"; };
+
     mips     = { bits = 32; significantByte = bigEndian;    family = "mips"; };
     mipsel   = { bits = 32; significantByte = littleEndian; family = "mips"; };
     mips64   = { bits = 64; significantByte = bigEndian;    family = "mips"; };
     mips64el = { bits = 64; significantByte = littleEndian; family = "mips"; };
+
     powerpc  = { bits = 32; significantByte = bigEndian;    family = "power"; };
+
     riscv32  = { bits = 32; significantByte = littleEndian; family = "riscv"; };
     riscv64  = { bits = 64; significantByte = littleEndian; family = "riscv"; };
+
     wasm32   = { bits = 32; significantByte = littleEndian; family = "wasm"; };
     wasm64   = { bits = 64; significantByte = littleEndian; family = "wasm"; };
   };
@@ -176,17 +187,24 @@ rec {
   types.abi = enum (attrValues abis);
 
   abis = setTypes types.openAbi {
-    android = {};
-    cygnus = {};
-    gnu = {};
-    msvc = {};
-    eabi = {};
-    androideabi = {};
-    gnueabi = {};
-    gnueabihf = {};
-    musleabi = {};
-    musleabihf = {};
-    musl = {};
+    cygnus       = {};
+    msvc         = {};
+    eabi         = {};
+
+    androideabi  = {};
+    android      = {};
+
+    gnueabi      = { float = "soft"; };
+    gnueabihf    = { float = "hard"; };
+    gnu          = {};
+
+    musleabi     = { float = "soft"; };
+    musleabihf   = { float = "hard"; };
+    musl         = {};
+
+    uclibceabihf = { float = "soft"; };
+    uclibceabi   = { float = "hard"; };
+    uclibc       = {};
 
     unknown = {};
   };

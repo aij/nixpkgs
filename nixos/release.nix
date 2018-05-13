@@ -123,7 +123,6 @@ let
         preferLocalBuild = true;
       };
 
-
 in rec {
 
   channel = import lib/make-channel.nix { inherit pkgs nixpkgs version versionSuffix; };
@@ -131,6 +130,7 @@ in rec {
   manual = buildFromConfig ({ pkgs, ... }: { }) (config: config.system.build.manual.manual);
   manualEpub = (buildFromConfig ({ pkgs, ... }: { }) (config: config.system.build.manual.manualEpub));
   manpages = buildFromConfig ({ pkgs, ... }: { }) (config: config.system.build.manual.manpages);
+  manualGeneratedSources = buildFromConfig ({ pkgs, ... }: { }) (config: config.system.build.manual.generatedSources);
   options = (buildFromConfig ({ pkgs, ... }: { }) (config: config.system.build.manual.optionsJSON)).x86_64-linux;
 
 
@@ -286,7 +286,7 @@ in rec {
   tests.ferm = callTest tests/ferm.nix {};
   tests.firefox = callTest tests/firefox.nix {};
   tests.firewall = callTest tests/firewall.nix {};
-  tests.fleet = callTestOnMatchingSystems ["x86_64-linux"] tests/fleet.nix {};
+  #tests.fleet = callTestOnMatchingSystems ["x86_64-linux"] tests/fleet.nix {};
   tests.fwupd = callTest tests/fwupd.nix {};
   #tests.gitlab = callTest tests/gitlab.nix {};
   tests.gitolite = callTest tests/gitolite.nix {};

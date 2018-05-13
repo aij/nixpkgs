@@ -838,6 +838,8 @@ with pkgs;
     boost = boost160;
   };
 
+  blobfuse = callPackage ../tools/filesystems/blobfuse { };
+
   blockdiag = pythonPackages.blockdiag;
 
   blsd = callPackage ../tools/misc/blsd {
@@ -1593,7 +1595,8 @@ with pkgs;
 
   ciopfs = callPackage ../tools/filesystems/ciopfs { };
 
-  citrix_receiver        = hiPrio citrix_receiver_13_9_0;
+  citrix_receiver        = hiPrio citrix_receiver_13_9_1;
+  citrix_receiver_13_9_1 = callPackage ../applications/networking/remote/citrix-receiver { version = "13.9.1"; };
   citrix_receiver_13_9_0 = callPackage ../applications/networking/remote/citrix-receiver { version = "13.9.0"; };
   citrix_receiver_13_8_0 = callPackage ../applications/networking/remote/citrix-receiver { version = "13.8.0"; };
   citrix_receiver_13_7_0 = callPackage ../applications/networking/remote/citrix-receiver { version = "13.7.0"; };
@@ -5522,28 +5525,14 @@ with pkgs;
 
   x11_ssh_askpass = callPackage ../tools/networking/x11-ssh-askpass { };
 
-  xbursttools = assert stdenv ? glibc; callPackage ../tools/misc/xburst-tools rec {
+  xbursttools = callPackage ../tools/misc/xburst-tools {
     # It needs a cross compiler for mipsel to build the firmware it will
     # load into the Ben Nanonote
-    crossPrefix = "mipsel-unknown-linux-gnu";
     gccCross =
       let
         pkgsCross = nixpkgsFun {
           # Ben Nanonote system
-          crossSystem = {
-            config = crossPrefix;
-            arch = "mips";
-            float = "soft";
-            libc = "uclibc";
-            platform = {
-              name = "ben_nanonote";
-              kernelMajor = "2.6";
-              kernelArch = "mips";
-            };
-            gcc = {
-              arch = "mips32";
-            };
-          };
+          crossSystem = lib.systems.examples.ben-nanonote;
         };
       in
         pkgsCross.buildPackages.gccCrossStageStatic;
@@ -5573,6 +5562,8 @@ with pkgs;
   libxfs = xfsprogs.dev;
 
   xml2 = callPackage ../tools/text/xml/xml2 { };
+
+  xmlformat = callPackage ../tools/text/xml/xmlformat { };
 
   xmlroff = callPackage ../tools/typesetting/xmlroff { };
 
@@ -6006,7 +5997,7 @@ with pkgs;
 
     # bootstrapping a profiled compiler does not work in the sheevaplug:
     # http://gcc.gnu.org/bugzilla/show_bug.cgi?id=43944
-    profiledCompiler = !stdenv.isArm;
+    profiledCompiler = !stdenv.isAarch32;
 
     libcCross = if targetPlatform != buildPlatform then libcCross else null;
   }));
@@ -6376,12 +6367,12 @@ with pkgs;
     (lib.addMetaAttrs { outputsToInstall = [ "jre" ]; }
       (openjdk7.jre // { outputs = [ "jre" ]; }));
 
-  jdk8 = if stdenv.isArm || stdenv.isAarch64 then oraclejdk8 else openjdk8 // { outputs = [ "out" ]; };
-  jre8 = if stdenv.isArm || stdenv.isAarch64 then oraclejre8 else lib.setName "openjre-${lib.getVersion pkgs.openjdk8.jre}"
+  jdk8 = if stdenv.isAarch32 || stdenv.isAarch64 then oraclejdk8 else openjdk8 // { outputs = [ "out" ]; };
+  jre8 = if stdenv.isAarch32 || stdenv.isAarch64 then oraclejre8 else lib.setName "openjre-${lib.getVersion pkgs.openjdk8.jre}"
     (lib.addMetaAttrs { outputsToInstall = [ "jre" ]; }
       (openjdk8.jre // { outputs = [ "jre" ]; }));
   jre8_headless =
-    if stdenv.isArm || stdenv.isAarch64 then
+    if stdenv.isAarch32 || stdenv.isAarch64 then
       oraclejre8
     else if stdenv.isDarwin then
       jre8
@@ -6390,12 +6381,12 @@ with pkgs;
         (lib.addMetaAttrs { outputsToInstall = [ "jre" ]; }
           ((openjdk8.override { minimal = true; }).jre // { outputs = [ "jre" ]; }));
 
-  jdk9 = if stdenv.isArm || stdenv.isAarch64 then oraclejdk9 else openjdk9 // { outputs = [ "out" ]; };
-  jre9 = if stdenv.isArm || stdenv.isAarch64 then oraclejre9 else lib.setName "openjre-${lib.getVersion pkgs.openjdk9.jre}"
+  jdk9 = if stdenv.isAarch32 || stdenv.isAarch64 then oraclejdk9 else openjdk9 // { outputs = [ "out" ]; };
+  jre9 = if stdenv.isAarch32 || stdenv.isAarch64 then oraclejre9 else lib.setName "openjre-${lib.getVersion pkgs.openjdk9.jre}"
     (lib.addMetaAttrs { outputsToInstall = [ "jre" ]; }
       (openjdk9.jre // { outputs = [ "jre" ]; }));
   jre9_headless =
-    if stdenv.isArm || stdenv.isAarch64 then
+    if stdenv.isAarch32 || stdenv.isAarch64 then
       oraclejre9
     else if stdenv.isDarwin then
       jre9
@@ -6404,12 +6395,12 @@ with pkgs;
         (lib.addMetaAttrs { outputsToInstall = [ "jre" ]; }
           ((openjdk9.override { minimal = true; }).jre // { outputs = [ "jre" ]; }));
 
-  jdk10 = if stdenv.isArm || stdenv.isAarch64 then oraclejdk10 else openjdk10 // { outputs = [ "out" ]; };
-  jre10 = if stdenv.isArm || stdenv.isAarch64 then oraclejre10 else lib.setName "openjre-${lib.getVersion pkgs.openjdk10.jre}"
+  jdk10 = if stdenv.isAarch32 || stdenv.isAarch64 then oraclejdk10 else openjdk10 // { outputs = [ "out" ]; };
+  jre10 = if stdenv.isAarch32 || stdenv.isAarch64 then oraclejre10 else lib.setName "openjre-${lib.getVersion pkgs.openjdk10.jre}"
     (lib.addMetaAttrs { outputsToInstall = [ "jre" ]; }
       (openjdk10.jre // { outputs = [ "jre" ]; }));
   jre10_headless =
-    if stdenv.isArm || stdenv.isAarch64 then
+    if stdenv.isAarch32 || stdenv.isAarch64 then
       oraclejre10
     else if stdenv.isDarwin then
       jre10
@@ -6434,6 +6425,8 @@ with pkgs;
 
   oraclejdk9 = pkgs.oraclejdk9distro "JDK" false;
 
+  oraclejdk10 = pkgs.oraclejdk10distro "JDK" false;
+
   oraclejre = lowPrio (pkgs.jdkdistro false false);
 
   oraclejre8 = lowPrio (pkgs.oraclejdk8distro false false);
@@ -6442,7 +6435,11 @@ with pkgs;
 
   oraclejre9 = lowPrio (pkgs.oraclejdk9distro "JRE" false);
 
+  oraclejre10 = lowPrio (pkgs.oraclejdk10distro "JRE" false);
+
   oracleserverjre9 = lowPrio (pkgs.oraclejdk9distro "ServerJRE" false);
+
+  oracleserverjre10 = lowPrio (pkgs.oraclejdk10distro "ServerJRE" false);
 
   jrePlugin = jre8Plugin;
 
@@ -6461,6 +6458,10 @@ with pkgs;
   oraclejdk9distro = packageType: pluginSupport:
     (if pluginSupport then appendToName "with-plugin" else x: x)
       (callPackage ../development/compilers/oraclejdk/jdk9-linux.nix { inherit packageType pluginSupport; });
+
+  oraclejdk10distro = packageType: pluginSupport:
+    (if pluginSupport then appendToName "with-plugin" else x: x)
+      (callPackage ../development/compilers/oraclejdk/jdk10-linux.nix { inherit packageType pluginSupport; });
 
   jikes = callPackage ../development/compilers/jikes { };
 
@@ -7257,7 +7258,10 @@ with pkgs;
   bundlerEnv = callPackage ../development/ruby-modules/bundler-env { };
   bundlerApp = callPackage ../development/ruby-modules/bundler-app { };
 
-  inherit (callPackage ../development/interpreters/ruby { inherit (darwin.apple_sdk.frameworks) Foundation; })
+  inherit (callPackage ../development/interpreters/ruby {
+    inherit (darwin) libiconv libobjc libunwind;
+    inherit (darwin.apple_sdk.frameworks) Foundation;
+  })
     ruby_2_3
     ruby_2_4
     ruby_2_5;
@@ -8977,7 +8981,7 @@ with pkgs;
     # hack fixes the hack, *sigh*.
     /**/ if name == "glibc" then targetPackages.glibcCross or glibcCross
     else if name == "bionic" then targetPackages.bionic
-    else if name == "uclibc" then uclibcCross
+    else if name == "uclibc" then targetPackages.uclibcCross
     else if name == "musl" then targetPackages.muslCross or muslCross
     else if name == "msvcrt" then targetPackages.windows.mingw_w64 or windows.mingw_w64
     else if name == "libSystem" then darwin.xcode
@@ -9186,7 +9190,7 @@ with pkgs;
 
   cairo = callPackage ../development/libraries/cairo {
     glSupport = config.cairo.gl or (stdenv.isLinux &&
-      !stdenv.isArm && !stdenv.isMips);
+      !stdenv.isAarch32 && !stdenv.isMips);
   };
 
 
@@ -13231,11 +13235,19 @@ with pkgs;
       ];
   };
 
-  linux_copperhead = callPackage ../os-specific/linux/kernel/linux-copperhead-hardened.nix {
+  linux_copperhead_lts = callPackage ../os-specific/linux/kernel/linux-copperhead-lts.nix {
     kernelPatches = with kernelPatches; [
-      kernelPatches.bridge_stp_helper
-      kernelPatches.modinst_arg_list_too_long
-      kernelPatches.tag_hardened
+      bridge_stp_helper
+      modinst_arg_list_too_long
+      tag_hardened
+    ];
+  };
+
+  linux_copperhead_stable = callPackage ../os-specific/linux/kernel/linux-copperhead-stable.nix {
+    kernelPatches = with kernelPatches; [
+      bridge_stp_helper
+      modinst_arg_list_too_long
+      tag_hardened
     ];
   };
 
@@ -13568,9 +13580,8 @@ with pkgs;
 
   linuxPackages_latest_xen_dom0_hardened = recurseIntoAttrs (hardenedLinuxPackagesFor (pkgs.linux_latest.override { features.xen_dom0=true; }));
 
-  linuxPackages_copperhead_hardened = recurseIntoAttrs (hardenedLinuxPackagesFor pkgs.linux_copperhead);
-  linux_copperhead_hardened = linuxPackages_copperhead_hardened.kernel;
-  linux_hardened_copperhead = linux_copperhead_hardened; # alias for backward compatibility
+  linuxPackages_copperhead_lts = recurseIntoAttrs (hardenedLinuxPackagesFor pkgs.linux_copperhead_lts);
+  linuxPackages_copperhead_stable = recurseIntoAttrs (hardenedLinuxPackagesFor pkgs.linux_copperhead_stable);
 
   # Samus kernels
   linuxPackages_samus_4_12 = recurseIntoAttrs (linuxPackagesFor pkgs.linux_samus_4_12);
@@ -13958,10 +13969,9 @@ with pkgs;
 
   uclibc = callPackage ../os-specific/linux/uclibc { };
 
-  uclibcCross = lowPrio (callPackage ../os-specific/linux/uclibc {
-    gccCross = gccCrossStageStatic;
-    cross = assert targetPlatform != buildPlatform; targetPlatform;
-  });
+  uclibcCross = callPackage ../os-specific/linux/uclibc {
+    stdenv = crossLibcStdenv;
+  };
 
   udev = systemd;
   libudev = udev;
@@ -15128,10 +15138,10 @@ with pkgs;
   # go 1.9 pin until https://github.com/moby/moby/pull/35739
   inherit (callPackage ../applications/virtualization/docker { go = go_1_9; })
     docker_18_03
-    docker_18_04;
+    docker_18_05;
 
   docker = docker_18_03;
-  docker-edge = docker_18_04;
+  docker-edge = docker_18_05;
 
   docker-proxy = callPackage ../applications/virtualization/docker/proxy.nix { };
 
@@ -18187,7 +18197,7 @@ with pkgs;
 
   vscode = callPackage ../applications/editors/vscode { };
 
-  vscode-with-extensions = callPackage ../applications/editors/vscode-with-extensions {};
+  vscode-with-extensions = callPackage ../applications/editors/vscode/with-extensions.nix {};
 
   vscode-utils = callPackage ../misc/vscode-extensions/vscode-utils.nix {};
 
