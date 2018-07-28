@@ -50,6 +50,8 @@ let
 
     atd = callPackage ../development/ocaml-modules/atd { };
 
+    atd2 = callPackage ../development/ocaml-modules/atd/2.x.nix { };
+
     atdgen = callPackage ../development/ocaml-modules/atdgen { };
 
     base64 = callPackage ../development/ocaml-modules/base64 { };
@@ -746,14 +748,14 @@ let
     # Jane Street
 
     janePackage = callPackage ../development/ocaml-modules/janestreet/janePackage.nix {};
-    
+
     janeStreet = import ../development/ocaml-modules/janestreet {
       inherit lib janePackage ocaml ocamlbuild angstrom ctypes cryptokit;
       inherit magic-mime num ocaml-migrate-parsetree octavius ounit;
       inherit ppx_deriving re zarith ppxlib;
       inherit (pkgs) stdenv openssl;
     };
-    
+
     janeStreet_0_9_0 = import ../development/ocaml-modules/janestreet/old.nix {
       janePackage = callPackage ../development/ocaml-modules/janestreet/janePackage.nix { defaultVersion = "0.9.0"; };
       inherit lib ocaml ocamlbuild ctypes cryptokit;
