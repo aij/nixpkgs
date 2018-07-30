@@ -48,11 +48,9 @@ let
       then callPackage ../development/ocaml-modules/async { }
       else null;
 
-    atd = callPackage ../development/ocaml-modules/atd { };
+    atd = callPackage ../development/ocaml-modules/atd/2.x.nix { };
 
-    atd2 = callPackage ../development/ocaml-modules/atd/2.x.nix { };
-
-    atdgen = callPackage ../development/ocaml-modules/atdgen { };
+    atdgen = atd; # atdgen is now part of atd
 
     base64 = callPackage ../development/ocaml-modules/base64 { };
 
