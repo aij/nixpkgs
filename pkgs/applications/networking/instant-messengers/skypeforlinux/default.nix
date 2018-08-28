@@ -1,12 +1,12 @@
-{ stdenv, fetchurl, dpkg, makeWrapper
-, alsaLib, atk, cairo, cups, curl, dbus, expat, fontconfig, freetype, glib, glibc, gnome2
-, libnotify, libpulseaudio, libsecret, libstdcxx5, libv4l, nspr, nss, systemd, xorg }:
+{ stdenv, fetchurl, dpkg
+, alsaLib, atk, cairo, cups, curl, dbus, expat, fontconfig, freetype, gdk_pixbuf, glib, glibc, gnome3
+, gtk3, libnotify, libpulseaudio, libsecret, libv4l, nspr, nss, pango, systemd, wrapGAppsHook, xorg }:
 
 let
 
   # Please keep the version x.y.0.z and do not update to x.y.76.z because the
   # source of the latter disappears much faster.
-  version = "8.18.0.6";
+  version = "8.24.0.2";
 
   rpath = stdenv.lib.makeLibraryPath [
     alsaLib
@@ -22,20 +22,19 @@ let
     glibc
     libsecret
 
-    gnome2.GConf
-    gnome2.gdk_pixbuf
-    gnome2.gtk
-    gnome2.pango
+    gnome3.gconf
+    gdk_pixbuf
+    gtk3
 
-    gnome2.gnome-keyring
+    gnome3.gnome-keyring
 
     libnotify
     libpulseaudio
     nspr
     nss
+    pango
     stdenv.cc.cc
     systemd
-    libstdcxx5
     libv4l
 
     xorg.libxkbfile
@@ -57,7 +56,7 @@ let
     if stdenv.system == "x86_64-linux" then
       fetchurl {
         url = "https://repo.skype.com/deb/pool/main/s/skypeforlinux/skypeforlinux_${version}_amd64.deb";
-        sha256 = "193icz1s385d25qzm5vx58h66m4hfwwmkavn0p3w6631gj617hig";
+        sha256 = "079bv0wilwwd9gqykcyfs4bj8za140788dxi058k4275h1jlvrww";
       }
     else
       throw "Skype for linux is not supported on ${stdenv.system}";
@@ -69,7 +68,10 @@ in stdenv.mkDerivation {
 
   inherit src;
 
-  buildInputs = [ dpkg makeWrapper ];
+  # For setup hook populating GSETTINGS_SCHEMA_PATH
+  nativeBuildInputs = [ wrapGAppsHook glib ];
+
+  buildInputs = [ dpkg ];
 
   unpackPhase = "true";
   installPhase = ''
@@ -78,6 +80,8 @@ in stdenv.mkDerivation {
     cp -av $out/usr/* $out
     rm -rf $out/opt $out/usr
     rm $out/bin/skypeforlinux
+
+    ln -s "$out/share/skypeforlinux/skypeforlinux" "$out/bin/skypeforlinux"
 
     # Otherwise it looks "suspicious"
     chmod -R g-w $out
@@ -88,8 +92,6 @@ in stdenv.mkDerivation {
       patchelf --set-interpreter "$(cat $NIX_CC/nix-support/dynamic-linker)" "$file" || true
       patchelf --set-rpath ${rpath}:$out/share/skypeforlinux $file || true
     done
-
-    ln -s "$out/share/skypeforlinux/skypeforlinux" "$out/bin/skypeforlinux"
 
     # Fix the desktop link
     substituteInPlace $out/share/applications/skypeforlinux.desktop \

@@ -7,7 +7,6 @@
 , trezor-bridge, bluejeans, djview4, adobe-reader
 , google_talk_plugin, fribid, gnome3/*.gnome-shell*/
 , esteidfirefoxplugin
-, vlc_npapi
 , browserpass, chrome-gnome-shell
 , libudev
 , kerberos
@@ -57,7 +56,6 @@ let
           ++ lib.optional (cfg.enableBluejeans or false) bluejeans
           ++ lib.optional (cfg.enableAdobeReader or false) adobe-reader
           ++ lib.optional (cfg.enableEsteid or false) esteidfirefoxplugin
-          ++ lib.optional (cfg.enableVLC or false) vlc_npapi
           ++ extraPlugins
         );
       nativeMessagingHosts =
@@ -66,10 +64,11 @@ let
           ++ lib.optional (cfg.enableGnomeExtensions or false) chrome-gnome-shell
           ++ extraNativeMessagingHosts
         );
-      libs = (if ffmpegSupport then [ ffmpeg ] else with gst_all; [ gstreamer gst-plugins-base ])
+      libs = [ libudev ]
+            ++ (if ffmpegSupport then [ ffmpeg ] else with gst_all; [ gstreamer gst-plugins-base ])
             ++ lib.optional gssSupport kerberos
             ++ lib.optionals (cfg.enableQuakeLive or false)
-            (with xorg; [ stdenv.cc libX11 libXxf86dga libXxf86vm libXext libXt alsaLib zlib libudev ])
+            (with xorg; [ stdenv.cc libX11 libXxf86dga libXxf86vm libXext libXt alsaLib zlib ])
             ++ lib.optional (enableAdobeFlash && (cfg.enableAdobeFlashDRM or false)) hal-flash
             ++ lib.optional (config.pulseaudio or true) libpulseaudio;
       gst-plugins = with gst_all; [ gst-plugins-base gst-plugins-good gst-plugins-bad gst-plugins-ugly gst-ffmpeg ];
