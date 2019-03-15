@@ -1,4 +1,4 @@
-{ stdenv, menhir, easy-format, fetchFromGitHub, buildDunePackage, which, biniou, yojson }:
+{ stdenv, menhir, easy-format, fetchFromGitHub, buildDunePackage, which, biniou, yojson, re }:
 
 buildDunePackage rec {
   pname = "atd";
@@ -16,7 +16,7 @@ buildDunePackage rec {
   createFindlibDestdir = true;
 
   buildInputs = [ which menhir ];
-  propagatedBuildInputs = [ easy-format biniou yojson ];
+  propagatedBuildInputs = [ easy-format biniou yojson re ];
 
   meta = with stdenv.lib; {
     homepage = https://github.com/mjambon/atd;
