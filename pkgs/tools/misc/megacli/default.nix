@@ -1,12 +1,12 @@
-{ stdenv, rpmextract, ncurses5, patchelf, makeWrapper, requireFile, unzip }:
+{ stdenv, rpmextract, ncurses5, patchelf, makeWrapper, fetchurl, unzip }:
 
 stdenv.mkDerivation rec {
   name = "megacli-8.07.07";
 
   src =
-    requireFile {
+    fetchurl {
       name = "8.07.07_MegaCLI.zip";
-      url = http://www.lsi.com/downloads/Public/MegaRAID%20Common%20Files/8.07.07_MegaCLI.zip;
+      url = https://docs.broadcom.com/docs-and-downloads/raid-controllers/raid-controllers-common-files/8-07-07_MegaCLI.zip;
       sha256 = "11jzvh25mlygflazd37gi05xv67im4rgq7sbs5nwgw3gxdh4xfjj";
     };
 
