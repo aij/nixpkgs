@@ -154,8 +154,6 @@ stdenv.lib.makeScope pkgs.newScope (self: with self; {
 
   gmic = pkgs.gmic.gimpPlugin;
 
-  ufraw = pkgs.ufraw.gimpPlugin;
-
   gimplensfun = pluginDerivation rec {
     version = "0.2.4";
     name = "gimplensfun-${version}";
