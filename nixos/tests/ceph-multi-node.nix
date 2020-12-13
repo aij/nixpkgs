@@ -19,6 +19,9 @@ let
       name = "2";
       ip = "192.168.1.4";
     };
+    client = {
+      ip = "192.168.1.5";
+    };
   };
   generateCephConfig = { daemonConfig }: {
     enable = true;
@@ -31,7 +34,7 @@ let
 
   generateHost = { pkgs, cephConfig, networkConfig, ... }: {
     virtualisation = {
-      memorySize = 512;
+      memorySize = 1024;
       emptyDiskImages = [ 20480 ];
       vlans = [ 1 ];
     };
@@ -42,16 +45,21 @@ let
       bash
       sudo
       ceph
+      kmod busybox
     ];
+
+    boot.kernelModules = [ "ceph" ];
 
     services.ceph = cephConfig;
   };
 
-  networkMonA = {
+  staticIp = address: {
     dhcpcd.enable = false;
     interfaces.eth1.ipv4.addresses = pkgs.lib.mkOverride 0 [
-      { address = cfg.monA.ip; prefixLength = 24; }
+      { inherit address; prefixLength = 24; }
     ];
+  };
+  networkMonA = staticIp cfg.monA.ip // {
     firewall = {
       allowedTCPPorts = [ 6789 3300 ];
       allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
@@ -66,13 +74,13 @@ let
       enable = true;
       daemons = [ cfg.monA.name ];
     };
+    mds = {
+      enable = true;
+      daemons = [ cfg.monA.name ];
+    };
   }; };
 
-  networkOsd = osd: {
-    dhcpcd.enable = false;
-    interfaces.eth1.ipv4.addresses = pkgs.lib.mkOverride 0 [
-      { address = osd.ip; prefixLength = 24; }
-    ];
+  networkOsd = osd: staticIp osd.ip // {
     firewall = {
       allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
     };
@@ -165,6 +173,31 @@ let
         "ceph osd pool delete multi-node-other-test multi-node-other-test --yes-i-really-really-mean-it",
     )
 
+    # Bootstram an MDS
+    monA.succeed(
+        "sudo -u ceph mkdir -p /var/lib/ceph/mds/ceph-${cfg.monA.name}",
+        "sudo -u ceph ceph-authtool --create-keyring /var/lib/ceph/mds/ceph-${cfg.monA.name}/keyring --gen-key -n mds.${cfg.monA.name}",
+        "ceph auth add mds.${cfg.monA.name} osd 'allow rwx' mds allow mon 'allow profile mds' -i /var/lib/ceph/mds/ceph-${cfg.monA.name}/keyring",
+        "systemctl start ceph-mds-${cfg.monA.name}",
+    )
+    monA.wait_for_unit("ceph-mds-a")
+
+    # Create a ceph filesystem
+    # Based on https://docs.ceph.com/en/latest/cephfs/createfs/
+    monA.succeed(
+        "ceph osd pool create cephfs_data",
+        "ceph osd pool create cephfs_metadata",
+        "ceph fs new cephfs cephfs_metadata cephfs_data",
+    )
+    # Mount the filesystem
+    monA.succeed(
+        "ceph fs authorize cephfs client.foo / rw >/etc/ceph/ceph.keyring",
+        # "cp /etc/ceph/ceph.client.admin.keyring /etc/ceph/ceph.keyring",
+        "mkdir -p /mnt/ceph",
+        "mount -t ceph :/ /mnt/ceph -o name=client.foo",
+        "ls -l /mnt/ceph",
+    )
+
     # Shut down ceph on all machines in a very unpolite way
     monA.crash()
     osd0.crash()
@@ -195,6 +228,7 @@ in {
     osd0 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd0; networkConfig = networkOsd cfg.osd0; };
     osd1 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd1; networkConfig = networkOsd cfg.osd1; };
     osd2 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd2; networkConfig = networkOsd cfg.osd2; };
+    # client = generateHost { pkgs = pkgs; cephConfig = {}; networkConfig = staticIp client.ip; };
   };
 
   testScript = testscript;
