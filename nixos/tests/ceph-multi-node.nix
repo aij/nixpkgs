@@ -177,10 +177,14 @@ let
     monA.succeed(
         "sudo -u ceph mkdir -p /var/lib/ceph/mds/ceph-${cfg.monA.name}",
         "sudo -u ceph ceph-authtool --create-keyring /var/lib/ceph/mds/ceph-${cfg.monA.name}/keyring --gen-key -n mds.${cfg.monA.name}",
-        "ceph auth add mds.${cfg.monA.name} osd 'allow rwx' mds allow mon 'allow profile mds' -i /var/lib/ceph/mds/ceph-${cfg.monA.name}/keyring",
+        # Per https://docs.ceph.com/en/latest/install/manual-deployment/ FIXME
+        # "ceph auth add mds.${cfg.monA.name} osd 'allow rwx' mds 'allow' mon 'allow profile mds' -i /var/lib/ceph/mds/ceph-${cfg.monA.name}/keyring",
+        # Per https://docs.ceph.com/en/latest/rados/configuration/auth-config-ref/
+        "ceph auth get-or-create mds.${cfg.monA.name} mon 'allow rwx' osd 'allow *' mds 'allow *' mgr 'allow profile mds' -o /var/lib/ceph/mds/ceph-${cfg.monA.name}/keyring",
         "systemctl start ceph-mds-${cfg.monA.name}",
     )
     monA.wait_for_unit("ceph-mds-a")
+    monA.wait_until_succeeds("ceph -s | grep 'HEALTH_OK'")
 
     # Create a ceph filesystem
     # Based on https://docs.ceph.com/en/latest/cephfs/createfs/
@@ -191,10 +195,11 @@ let
     )
     # Mount the filesystem
     monA.succeed(
-        "ceph fs authorize cephfs client.foo / rw >/etc/ceph/ceph.keyring",
+        "ceph fs authorize cephfs client.foo / rw >/etc/ceph/ceph.client.foo.keyring",
+        # monA.succeed("ceph-authtool /etc/ceph/ceph.client.foo.keyring --print-key -n client.foo >/etc/ceph/ceph.client.foo.secret")
         # "cp /etc/ceph/ceph.client.admin.keyring /etc/ceph/ceph.keyring",
         "mkdir -p /mnt/ceph",
-        "mount -t ceph :/ /mnt/ceph -o name=client.foo",
+        "mount -t ceph :/ /mnt/ceph -o name=foo",
         "ls -l /mnt/ceph",
     )
 
