@@ -93,6 +93,8 @@ let
     };
   }; };
 
+  cephConfigClient = generateCephConfig { daemonConfig = {}; };
+
   # Following deployment is based on the manual deployment described here:
   # https://docs.ceph.com/docs/master/install/manual-deployment/
   # For other ways to deploy a ceph cluster, look at the documentation at
@@ -192,12 +194,11 @@ let
         "ceph osd pool create cephfs_data",
         "ceph osd pool create cephfs_metadata",
         "ceph fs new cephfs cephfs_metadata cephfs_data",
+        "ceph fs authorize cephfs client.foo / rw >/tmp/shared/ceph.client.foo.keyring",
     )
     # Mount the filesystem
-    monA.succeed(
-        "ceph fs authorize cephfs client.foo / rw >/etc/ceph/ceph.client.foo.keyring",
-        # monA.succeed("ceph-authtool /etc/ceph/ceph.client.foo.keyring --print-key -n client.foo >/etc/ceph/ceph.client.foo.secret")
-        # "cp /etc/ceph/ceph.client.admin.keyring /etc/ceph/ceph.keyring",
+    client.succeed(
+        "cp /tmp/shared/ceph.client.foo.keyring /etc/ceph/ceph.client.foo.keyring",
         "mkdir -p /mnt/ceph",
         "mount -t ceph :/ /mnt/ceph -o name=foo",
         "ls -l /mnt/ceph",
@@ -220,6 +221,7 @@ let
     monA.wait_until_succeeds("ceph -s | grep 'quorum ${cfg.monA.name}'")
     monA.wait_until_succeeds("ceph osd stat | grep -e '3 osds: 3 up[^,]*, 3 in'")
     monA.wait_until_succeeds("ceph -s | grep 'mgr: ${cfg.monA.name}(active,'")
+    monA.succeed("ceph -s")
     monA.wait_until_succeeds("ceph -s | grep 'HEALTH_OK'")
   '';
 in {
@@ -233,7 +235,7 @@ in {
     osd0 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd0; networkConfig = networkOsd cfg.osd0; };
     osd1 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd1; networkConfig = networkOsd cfg.osd1; };
     osd2 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd2; networkConfig = networkOsd cfg.osd2; };
-    # client = generateHost { pkgs = pkgs; cephConfig = {}; networkConfig = staticIp client.ip; };
+    client = generateHost { pkgs = pkgs; cephConfig = cephConfigClient; networkConfig = staticIp cfg.client.ip; };
   };
 
   testScript = testscript;
