@@ -202,9 +202,11 @@ let
         "mkdir -p /mnt/ceph",
         "mount -t ceph :/ /mnt/ceph -o name=foo",
         "ls -l /mnt/ceph",
+        "cp -a ${pkgs.ceph.out} /mnt/ceph/some_data",
+        "df -h /mnt/ceph",
     )
 
-    # Shut down ceph on all machines in a very unpolite way
+    # Shut down ceph on all cluster machines in a very unpolite way
     monA.crash()
     osd0.crash()
     osd1.crash()
@@ -221,8 +223,21 @@ let
     monA.wait_until_succeeds("ceph -s | grep 'quorum ${cfg.monA.name}'")
     monA.wait_until_succeeds("ceph osd stat | grep -e '3 osds: 3 up[^,]*, 3 in'")
     monA.wait_until_succeeds("ceph -s | grep 'mgr: ${cfg.monA.name}(active,'")
+    monA.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1/1 {0=${cfg.monA.name}=up'")
     monA.succeed("ceph -s")
-    monA.wait_until_succeeds("ceph -s | grep 'HEALTH_OK'")
+    # I'm getting HEALTH_WARN due to "1 MDSs report slow metadata IOs", which
+    # presumably will be dependent on the underlying hardware running the test
+    # so we will consider that to be OK for the test.
+    monA.wait_until_succeeds("ceph -s | grep -e HEALTH_OK -e HEALTH_WARN")
+
+    # Client should still have the filesystem mounted and usable
+    print(client.succeed("df -h /mnt/ceph"))
+    print(client.succeed("ls -l /mnt/ceph"))
+    client.succeed(
+        # "echo hello > /mnt/ceph/world",
+        # Make sure we didn't lose anything from earlier
+        "diff -R ${pkgs.ceph.out} /mnt/ceph/some_data",
+    )
   '';
 in {
   name = "basic-multi-node-ceph-cluster";
