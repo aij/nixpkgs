@@ -19,8 +19,12 @@ let
       name = "2";
       ip = "192.168.1.4";
     };
-    client = {
+    mdsB = {
+      name = "b";
       ip = "192.168.1.5";
+    };
+    client = {
+      ip = "192.168.1.6";
     };
   };
   generateCephConfig = { daemonConfig }: {
@@ -74,10 +78,6 @@ let
       enable = true;
       daemons = [ cfg.monA.name ];
     };
-    mds = {
-      enable = true;
-      daemons = [ cfg.monA.name ];
-    };
   }; };
 
   networkOsd = osd: staticIp osd.ip // {
@@ -92,6 +92,21 @@ let
       daemons = [ osd.name ];
     };
   }; };
+
+  cephConfigMdsB = generateCephConfig { daemonConfig = {
+    mds = {
+      enable = true;
+      daemons = [ cfg.mdsB.name ];
+    };
+  }; };
+
+  networkMdsB = staticIp cfg.mdsB.ip // {
+    firewall = {
+      allowedTCPPorts = [ 6789 3300 ];
+      allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
+    };
+  };
+
 
   cephConfigClient = generateCephConfig { daemonConfig = {}; };
 
@@ -132,7 +147,7 @@ let
         "ceph auth get-or-create mgr.${cfg.monA.name} mon 'allow profile mgr' osd 'allow *' mds 'allow *' > /var/lib/ceph/mgr/ceph-${cfg.monA.name}/keyring",
         "systemctl start ceph-mgr-${cfg.monA.name}",
     )
-    monA.wait_for_unit("ceph-mgr-a")
+    monA.wait_for_unit("ceph-mgr-${cfg.monA.name}")
     monA.wait_until_succeeds("ceph -s | grep 'quorum ${cfg.monA.name}'")
     monA.wait_until_succeeds("ceph -s | grep 'mgr: ${cfg.monA.name}(active,'")
 
@@ -177,16 +192,19 @@ let
 
     # Bootstram an MDS
     monA.succeed(
-        "sudo -u ceph mkdir -p /var/lib/ceph/mds/ceph-${cfg.monA.name}",
-        "sudo -u ceph ceph-authtool --create-keyring /var/lib/ceph/mds/ceph-${cfg.monA.name}/keyring --gen-key -n mds.${cfg.monA.name}",
-        # Per https://docs.ceph.com/en/latest/install/manual-deployment/ FIXME
-        # "ceph auth add mds.${cfg.monA.name} osd 'allow rwx' mds 'allow' mon 'allow profile mds' -i /var/lib/ceph/mds/ceph-${cfg.monA.name}/keyring",
-        # Per https://docs.ceph.com/en/latest/rados/configuration/auth-config-ref/
-        "ceph auth get-or-create mds.${cfg.monA.name} mon 'allow rwx' osd 'allow *' mds 'allow *' mgr 'allow profile mds' -o /var/lib/ceph/mds/ceph-${cfg.monA.name}/keyring",
-        "systemctl start ceph-mds-${cfg.monA.name}",
+        "ceph auth get-or-create mds.${cfg.mdsB.name} mon 'allow rwx' osd 'allow *' mds 'allow *' mgr 'allow profile mds' -o /tmp/shared/ceph-${cfg.mdsB.name}-keyring",
     )
-    monA.wait_for_unit("ceph-mds-a")
-    monA.wait_until_succeeds("ceph -s | grep 'HEALTH_OK'")
+    mdsB.succeed(
+        "mkdir -p /var/lib/ceph/mds/ceph-${cfg.mdsB.name}",
+        "cp /tmp/shared/ceph-${cfg.mdsB.name}-keyring /var/lib/ceph/mds/ceph-${cfg.mdsB.name}/keyring",
+        # "chown",
+        "systemctl start ceph-mds-${cfg.mdsB.name}",
+    )
+    mdsB.wait_for_unit("ceph-mds-${cfg.mdsB.name}")
+    print(monA.succeed("ceph -s"))
+    monA.wait_until_succeeds("ceph -s | grep 'mds: '")
+    print(monA.succeed("ceph -s"))
+    monA.wait_until_succeeds("ceph -s | grep HEALTH_OK")
 
     # Create a ceph filesystem
     # Based on https://docs.ceph.com/en/latest/cephfs/createfs/
@@ -206,25 +224,29 @@ let
         "df -h /mnt/ceph",
     )
 
-    # Shut down ceph on all cluster machines in a very unpolite way
-    monA.crash()
-    osd0.crash()
-    osd1.crash()
-    osd2.crash()
+    print(monA.succeed("ceph -s"))
 
-    # Start it up
-    osd0.start()
-    osd1.start()
-    osd2.start()
-    monA.start()
+    # # Shut down ceph on all cluster machines in a very unpolite way
+    # monA.crash()
+    # osd0.crash()
+    # osd1.crash()
+    # osd2.crash()
+    #
+    # # Start it up
+    # osd0.start()
+    # osd1.start()
+    # osd2.start()
+    # monA.start()
 
     # Ensure the cluster comes back up again
     monA.succeed("ceph -s | grep 'mon: 1 daemons'")
     monA.wait_until_succeeds("ceph -s | grep 'quorum ${cfg.monA.name}'")
     monA.wait_until_succeeds("ceph osd stat | grep -e '3 osds: 3 up[^,]*, 3 in'")
     monA.wait_until_succeeds("ceph -s | grep 'mgr: ${cfg.monA.name}(active,'")
-    monA.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1/1 {0=${cfg.monA.name}=up'")
-    monA.succeed("ceph -s")
+    print(monA.succeed("ceph -s"))
+    monA.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mdsB.name}=up'")
+    print(monA.succeed("ceph -s"))
+
     # I'm getting HEALTH_WARN due to "1 MDSs report slow metadata IOs", which
     # presumably will be dependent on the underlying hardware running the test
     # so we will consider that to be OK for the test.
@@ -250,6 +272,7 @@ in {
     osd0 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd0; networkConfig = networkOsd cfg.osd0; };
     osd1 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd1; networkConfig = networkOsd cfg.osd1; };
     osd2 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd2; networkConfig = networkOsd cfg.osd2; };
+    mdsB = generateHost { pkgs = pkgs; cephConfig = cephConfigMdsB; networkConfig = networkMdsB; };
     client = generateHost { pkgs = pkgs; cephConfig = cephConfigClient; networkConfig = staticIp cfg.client.ip; };
   };
 
