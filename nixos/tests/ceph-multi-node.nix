@@ -19,8 +19,8 @@ let
       name = "2";
       ip = "192.168.1.4";
     };
-    mdsB = {
-      name = "b";
+    mds0 = {
+      name = "mds0";
       ip = "192.168.1.5";
     };
     client = {
@@ -93,14 +93,14 @@ let
     };
   }; };
 
-  cephConfigMdsB = generateCephConfig { daemonConfig = {
+  cephConfigMds0 = generateCephConfig { daemonConfig = {
     mds = {
       enable = true;
-      daemons = [ cfg.mdsB.name ];
+      daemons = [ cfg.mds0.name ];
     };
   }; };
 
-  networkMdsB = staticIp cfg.mdsB.ip // {
+  networkMds0 = staticIp cfg.mds0.ip // {
     firewall = {
       allowedTCPPorts = [ 6789 3300 ];
       allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
@@ -192,15 +192,15 @@ let
 
     # Bootstram an MDS
     monA.succeed(
-        "ceph auth get-or-create mds.${cfg.mdsB.name} mon 'allow rwx' osd 'allow *' mds 'allow *' mgr 'allow profile mds' -o /tmp/shared/ceph-${cfg.mdsB.name}-keyring",
+        "ceph auth get-or-create mds.${cfg.mds0.name} mon 'allow rwx' osd 'allow *' mds 'allow *' mgr 'allow profile mds' -o /tmp/shared/ceph-${cfg.mds0.name}-keyring",
     )
-    mdsB.succeed(
-        "mkdir -p /var/lib/ceph/mds/ceph-${cfg.mdsB.name}",
-        "cp /tmp/shared/ceph-${cfg.mdsB.name}-keyring /var/lib/ceph/mds/ceph-${cfg.mdsB.name}/keyring",
+    mds0.succeed(
+        "mkdir -p /var/lib/ceph/mds/ceph-${cfg.mds0.name}",
+        "cp /tmp/shared/ceph-${cfg.mds0.name}-keyring /var/lib/ceph/mds/ceph-${cfg.mds0.name}/keyring",
         # "chown",
-        "systemctl start ceph-mds-${cfg.mdsB.name}",
+        "systemctl start ceph-mds-${cfg.mds0.name}",
     )
-    mdsB.wait_for_unit("ceph-mds-${cfg.mdsB.name}")
+    mds0.wait_for_unit("ceph-mds-${cfg.mds0.name}")
     print(monA.succeed("ceph -s"))
     monA.wait_until_succeeds("ceph -s | grep 'mds: '")
     print(monA.succeed("ceph -s"))
@@ -227,7 +227,7 @@ let
     print(monA.succeed("ceph -s"))
 
     # Shut down ceph on all cluster machines in a very unpolite way
-    mdsB.crash()
+    mds0.crash()
     monA.crash()
     osd0.crash()
     osd1.crash()
@@ -239,7 +239,7 @@ let
     osd1.start()
     osd2.start()
     monA.start()
-    mdsB.start()
+    mds0.start()
     client.start()
 
     # Ensure the cluster comes back up again
@@ -249,7 +249,7 @@ let
     print(monA.succeed("ceph -s"))
     print(monA.wait_until_succeeds("ceph -s | grep 'mgr: ${cfg.monA.name}(active,'"))
     print(monA.succeed("ceph -s"))
-    monA.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mdsB.name}=up'")
+    monA.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mds0.name}=up'")
     print(monA.succeed("ceph -s"))
 
     monA.wait_until_succeeds("ceph -s | grep HEALTH_OK")
@@ -280,7 +280,7 @@ in {
     osd0 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd0; networkConfig = networkOsd cfg.osd0; };
     osd1 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd1; networkConfig = networkOsd cfg.osd1; };
     osd2 = generateHost { pkgs = pkgs; cephConfig = cephConfigOsd cfg.osd2; networkConfig = networkOsd cfg.osd2; };
-    mdsB = generateHost { pkgs = pkgs; cephConfig = cephConfigMdsB; networkConfig = networkMdsB; };
+    mds0 = generateHost { pkgs = pkgs; cephConfig = cephConfigMds0; networkConfig = networkMds0; };
     client = generateHost { pkgs = pkgs; cephConfig = cephConfigClient; networkConfig = staticIp cfg.client.ip; };
   };
 
