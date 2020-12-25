@@ -39,23 +39,12 @@ let
       ip = "192.168.1.100";
     };
   };
-  generateCephConfig = { daemonConfig }: {
-    enable = true;
-    global = {
-      fsid = cfg.clusterId;
-      monHost = cfg.monA.ip;
-      monInitialMembers = cfg.monA.name;
-    };
-  } // daemonConfig;
-
-  generateHost = { services, networking }: {
+  commonConfig = {
     virtualisation = {
       memorySize = 1024;
       emptyDiskImages = [ 20480 ];
       vlans = [ 1 ];
     };
-
-    networking = networking;
 
     environment.systemPackages = with pkgs; [
       bash
@@ -66,22 +55,33 @@ let
 
     boot.kernelModules = [ "ceph" ];
 
-    services = services;
+    services.ceph = {
+      enable = true;
+      global = {
+        fsid = cfg.clusterId;
+        monHost = cfg.monA.ip;
+        monInitialMembers = cfg.monA.name;
+      };
+    };
   };
 
-  staticIp = address: {
-    dhcpcd.enable = false;
-    interfaces.eth1.ipv4.addresses = pkgs.lib.mkOverride 0 [
-      { inherit address; prefixLength = 24; }
+  generateHost = {ip, ...}: config: {
+    imports = [ commonConfig config ];
+    networking = {
+      dhcpcd.enable = false;
+      interfaces.eth1.ipv4.addresses = pkgs.lib.mkOverride 0 [
+      { address = ip; prefixLength = 24; }
     ];
   };
-  networkMonA = staticIp cfg.monA.ip // {
+  };
+
+  networkMonA = {
     firewall = {
       allowedTCPPorts = [ 6789 3300 ];
       allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
     };
   };
-  cephConfigMonA = generateCephConfig { daemonConfig = {
+  cephConfigMonA = {
     mon = {
       enable = true;
       daemons = [ cfg.monA.name ];
@@ -90,29 +90,29 @@ let
       enable = true;
       daemons = [ cfg.monA.name ];
     };
-  }; };
+  };
 
-  networkOsd = osd: staticIp osd.ip // {
+  networkOsd = osd: {
     firewall = {
       allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
     };
   };
 
-  cephConfigOsd = osd: generateCephConfig { daemonConfig = {
+  cephConfigOsd = osd: {
     osd = {
       enable = true;
       daemons = [ osd.name ];
     };
-  }; };
+  };
 
-  cephConfigMds0 = generateCephConfig { daemonConfig = {
+  cephConfigMds0 = {
     mds = {
       enable = true;
       daemons = [ cfg.mds0.name ];
     };
-  }; };
+  };
 
-  networkMds0 = staticIp cfg.mds0.ip // {
+  networkMds0 = {
     firewall = {
       allowedTCPPorts = [ 6789 3300 ];
       allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
@@ -120,16 +120,16 @@ let
   };
 
 
-  cephConfigClient = generateCephConfig { daemonConfig = {}; };
+  cephConfigClient =  { };
 
 in {
   nodes = {
-    monA = generateHost { services.ceph = cephConfigMonA; networking = networkMonA; };
-    osd0 = generateHost { services.ceph = cephConfigOsd cfg.osd0; networking = networkOsd cfg.osd0; };
-    osd1 = generateHost { services.ceph = cephConfigOsd cfg.osd1; networking = networkOsd cfg.osd1; };
-    osd2 = generateHost { services.ceph = cephConfigOsd cfg.osd2; networking = networkOsd cfg.osd2; };
-    mds0 = generateHost { services.ceph = cephConfigMds0; networking = networkMds0; };
-    client = generateHost {services.ceph = cephConfigClient; networking = staticIp cfg.client.ip; };
+    monA = generateHost cfg.monA { services.ceph = cephConfigMonA; networking = networkMonA; };
+    osd0 = generateHost cfg.osd0 { services.ceph = cephConfigOsd cfg.osd0; networking = networkOsd cfg.osd0; };
+    osd1 = generateHost cfg.osd1 { services.ceph = cephConfigOsd cfg.osd1; networking = networkOsd cfg.osd1; };
+    osd2 = generateHost cfg.osd2 { services.ceph = cephConfigOsd cfg.osd2; networking = networkOsd cfg.osd2; };
+    mds0 = generateHost cfg.mds0 { services.ceph = cephConfigMds0; networking = networkMds0; };
+    client = generateHost cfg.client { };
   };
 
   # Following deployment is based on the manual deployment described here:
