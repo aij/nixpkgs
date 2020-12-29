@@ -53,14 +53,16 @@ let
       kmod busybox
     ];
 
-    boot.kernelModules = [ "ceph" ];
-
     services.ceph = {
       enable = true;
       global = {
         fsid = cfg.clusterId;
         monHost = cfg.monA.ip;
         monInitialMembers = cfg.monA.name;
+        # Ideally, this should include all expected mons, but we can't have
+        # others configured when bootstrapping.
+        #monInitialMembers = "${cfg.monA.name} ${cfg.monB.name} ${cfg.monC.name}";
+        publicNetwork = "192.168.1.0/24";
       };
     };
   };
@@ -75,60 +77,66 @@ let
   };
   };
 
-  networkMonA = {
-    firewall = {
-      allowedTCPPorts = [ 6789 3300 ];
-      allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
+  monConfig = {name, ...}: {
+    networking = {
+      firewall = {
+        allowedTCPPorts = [ 6789 3300 ];
+        allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
+      };
     };
-  };
-  cephConfigMonA = {
-    mon = {
-      enable = true;
-      daemons = [ cfg.monA.name ];
+    services.ceph = {
+      mon = {
+        enable = true;
+        daemons = [ name ];
+      };
+      mgr = {
+        enable = true;
+        daemons = [ name ];
+      };
+    }; };
+
+  osdConfig = {name, ...}: {
+    networking = {
+      firewall = {
+        allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
+      };
     };
-    mgr = {
-      enable = true;
-      daemons = [ cfg.monA.name ];
+
+    services.ceph = {
+      osd = {
+        enable = true;
+        daemons = [ name ];
+      };
     };
   };
 
-  networkOsd = osd: {
-    firewall = {
-      allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
+  mdsConfig= {name, ...}: {
+    services.ceph = {
+      mds = {
+        enable = true;
+        daemons = [ name ];
+      };
+    };
+
+    networking = {
+      firewall = {
+        allowedTCPPorts = [ 6789 3300 ];
+        allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
+      };
     };
   };
-
-  cephConfigOsd = osd: {
-    osd = {
-      enable = true;
-      daemons = [ osd.name ];
-    };
-  };
-
-  cephConfigMds0 = {
-    mds = {
-      enable = true;
-      daemons = [ cfg.mds0.name ];
-    };
-  };
-
-  networkMds0 = {
-    firewall = {
-      allowedTCPPorts = [ 6789 3300 ];
-      allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
-    };
-  };
-
 
   cephConfigClient =  { };
 
 in {
   nodes = {
-    monA = generateHost cfg.monA { services.ceph = cephConfigMonA; networking = networkMonA; };
-    osd0 = generateHost cfg.osd0 { services.ceph = cephConfigOsd cfg.osd0; networking = networkOsd cfg.osd0; };
-    osd1 = generateHost cfg.osd1 { services.ceph = cephConfigOsd cfg.osd1; networking = networkOsd cfg.osd1; };
-    osd2 = generateHost cfg.osd2 { services.ceph = cephConfigOsd cfg.osd2; networking = networkOsd cfg.osd2; };
-    mds0 = generateHost cfg.mds0 { services.ceph = cephConfigMds0; networking = networkMds0; };
+    monA = generateHost cfg.monA (monConfig cfg.monA);
+    monB = generateHost cfg.monB (monConfig cfg.monB);
+    monC = generateHost cfg.monC (monConfig cfg.monC);
+    osd0 = generateHost cfg.osd0 (osdConfig cfg.osd0);
+    osd1 = generateHost cfg.osd1 (osdConfig cfg.osd1);
+    osd2 = generateHost cfg.osd2 (osdConfig cfg.osd2);
+    mds0 = generateHost cfg.mds0 (mdsConfig cfg.mds0);
     client = generateHost cfg.client { };
   };
 
@@ -175,6 +183,7 @@ in {
 
     # Send the OSD Bootstrap keyring to the OSD machines
     monA.succeed("cp -r /var/lib/ceph/bootstrap-osd /tmp/shared")
+    # /etc/ceph/ceph.client.bootstrap-osd.keyring
     osd0.succeed("cp -r /tmp/shared/bootstrap-osd /var/lib/ceph/")
     osd1.succeed("cp -r /tmp/shared/bootstrap-osd /var/lib/ceph/")
     osd2.succeed("cp -r /tmp/shared/bootstrap-osd /var/lib/ceph/")
@@ -222,6 +231,8 @@ in {
         "ceph fs new cephfs cephfs_metadata cephfs_data",
         "ceph fs authorize cephfs client.foo / rw >/tmp/shared/ceph.client.foo.keyring",
     )
+    print(monA.succeed("ceph -s"))
+
     # Mount the filesystem
     client.succeed(
         "cp /tmp/shared/ceph.client.foo.keyring /etc/ceph/ceph.client.foo.keyring",
@@ -232,7 +243,38 @@ in {
         "df -h /mnt/ceph",
     )
 
+    # Add 2 more Mon/mgrs so we can tolerate a failure while maintaining quorum
+    # Based on https://docs.ceph.com/en/latest/rados/operations/add-or-rm-mons/
+    monA.succeed(
+        "ceph auth get mon. -o /tmp/shared/mon.keyring",
+        "ceph mon getmap -o /tmp/shared/monmap",
+        "ceph auth get-or-create mgr.${cfg.monB.name} mon 'allow profile mgr' osd 'allow *' mds 'allow *' > /tmp/shared/ceph-${cfg.monB.name}.keyring",
+        "ceph auth get-or-create mgr.${cfg.monC.name} mon 'allow profile mgr' osd 'allow *' mds 'allow *' > /tmp/shared/ceph-${cfg.monC.name}.keyring",
+    )
+    monB.succeed(
+        "mkdir /var/lib/ceph/mon/ceph-${cfg.monB.name}",
+        "ceph-mon -i ${cfg.monB.name} --mkfs --monmap /tmp/shared/monmap --keyring /tmp/shared/mon.keyring",
+        "systemctl start ceph-mon-${cfg.monB.name}",
+        "mkdir /var/lib/ceph/mgr/ceph-${cfg.monB.name}",
+        "cp /tmp/shared/ceph-${cfg.monB.name}.keyring /var/lib/ceph/mgr/ceph-${cfg.monB.name}/keyring",
+        "systemctl start ceph-mgr-${cfg.monB.name}",
+    )
+    monB.wait_for_unit("ceph-mon-${cfg.monB.name}")
+    monB.wait_for_unit("ceph-mgr-${cfg.monB.name}")
+    monC.succeed(
+        "mkdir /var/lib/ceph/mon/ceph-${cfg.monC.name}",
+        "ceph-mon -i ${cfg.monC.name} --mkfs --monmap /tmp/shared/monmap --keyring /tmp/shared/mon.keyring",
+        "systemctl start ceph-mon-${cfg.monC.name}",
+        "mkdir /var/lib/ceph/mgr/ceph-${cfg.monC.name}",
+        "cp /tmp/shared/ceph-${cfg.monC.name}.keyring /var/lib/ceph/mgr/ceph-${cfg.monC.name}/keyring",
+        "systemctl start ceph-mgr-${cfg.monC.name}",
+    )
+    monC.wait_for_unit("ceph-mon-${cfg.monC.name}")
+    monC.wait_for_unit("ceph-mgr-${cfg.monC.name}")
     print(monA.succeed("ceph -s"))
+    monA.wait_until_succeeds("ceph -s | grep 'mon: 3 daemons'")
+    print(monA.succeed("ceph -s"))
+    monA.wait_until_succeeds("ceph -s | grep 'mgr: a(active, since .*), standbys: b, c'")
 
     # Shut down ceph on all cluster machines in a very unpolite way
     # mds0.crash()
@@ -243,7 +285,7 @@ in {
     # client.crash()
     #
     # # Start it up
-    osd0.start()
+    # osd0.start()
     # osd1.start()
     # osd2.start()
     # monA.start()
@@ -251,7 +293,7 @@ in {
     # client.start()
 
     # Ensure the cluster comes back up again
-    monA.succeed("ceph -s | grep 'mon: 1 daemons'")
+    monA.succeed("ceph -s | grep 'mon: 3 daemons'")
     monA.wait_until_succeeds("ceph -s | grep 'quorum ${cfg.monA.name}'")
     monA.wait_until_succeeds("ceph osd stat | grep -e '3 osds: 3 up[^,]*, 3 in'")
     print(monA.succeed("ceph -s"))
@@ -260,7 +302,7 @@ in {
     monA.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mds0.name}=up'")
     print(monA.succeed("ceph -s"))
 
-    monA.wait_until_succeeds("ceph -s | grep HEALTH_OK")
+    monA.wait_until_succeeds("ceph -s | grep HEALTH_WARN")
 
     # TODO: The client should be able to recover if it stays up accross a ceph cluster restart?
     # Re-Mount the filesystem
