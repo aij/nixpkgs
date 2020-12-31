@@ -127,6 +127,7 @@ in {
     osd1 = generateHost cfg.osd1 (osdConfig cfg.osd1);
     osd2 = generateHost cfg.osd2 (osdConfig cfg.osd2);
     mds0 = generateHost cfg.mds0 (mdsConfig cfg.mds0);
+    mds1 = generateHost cfg.mds1 (mdsConfig cfg.mds1);
     client = generateHost cfg.client { };
   };
 
@@ -197,21 +198,25 @@ in {
     monA.wait_until_succeeds("ceph -s | grep 'HEALTH_OK'")
 
 
-    # Bootstram an MDS
-    monA.succeed(
-        "ceph auth get-or-create mds.${cfg.mds0.name} mon 'allow rwx' osd 'allow *' mds 'allow *' mgr 'allow profile mds' -o /tmp/shared/ceph-${cfg.mds0.name}-keyring",
-    )
-    mds0.succeed(
-        "mkdir -p /var/lib/ceph/mds/ceph-${cfg.mds0.name}",
-        "cp /tmp/shared/ceph-${cfg.mds0.name}-keyring /var/lib/ceph/mds/ceph-${cfg.mds0.name}/keyring",
-        # "chown",
-        "systemctl start ceph-mds-${cfg.mds0.name}",
-    )
-    mds0.wait_for_unit("ceph-mds-${cfg.mds0.name}")
-    # print(monA.succeed("ceph -s"))
-    monA.wait_until_succeeds("ceph -s | grep 'mds: '")
-    # print(monA.succeed("ceph -s"))
-    monA.wait_until_succeeds("ceph -s | grep HEALTH_OK")
+    def add_mds(machine, name):
+        monA.succeed(
+            f"ceph auth get-or-create mds.{name} mon 'allow rwx' osd 'allow *' mds 'allow *' mgr 'allow profile mds' -o /tmp/shared/ceph-{name}-keyring",
+        )
+        machine.succeed(
+            f"mkdir -p /var/lib/ceph/mds/ceph-{name}",
+            f"cp /tmp/shared/ceph-{name}-keyring /var/lib/ceph/mds/ceph-{name}/keyring",
+            # "chown",
+            f"systemctl start ceph-mds-{name}",
+        )
+        machine.wait_for_unit(f"ceph-mds-{name}")
+        print(monA.succeed("ceph -s"))
+        monA.wait_until_succeeds("ceph -s | grep 'mds: '")
+        print(monA.succeed("ceph -s"))
+        monA.wait_until_succeeds("ceph -s | grep HEALTH_OK")
+
+
+    # Bootstrap an MDS
+    add_mds(mds0, "${cfg.mds0.name}")
 
     # Create a ceph filesystem
     # Based on https://docs.ceph.com/en/latest/cephfs/createfs/
@@ -222,6 +227,10 @@ in {
         "ceph fs authorize cephfs client.foo / rw >/tmp/shared/ceph.client.foo.keyring",
     )
     # print(monA.succeed("ceph -s"))
+
+    # Add a standby MDS
+    add_mds(mds1, "${cfg.mds1.name}")
+    monA.wait_until_succeeds("ceph -s | grep 'mds: .*up:active.* up:standby'")
 
     # Mount the filesystem
     client.succeed(
@@ -270,24 +279,15 @@ in {
     monA.succeed("cp /etc/ceph/ceph.client.admin.keyring /tmp/shared/")
     monB.succeed("cp /tmp/shared/ceph.client.admin.keyring /etc/ceph/")
 
-    # Shut down ceph on all cluster machines in a very unpolite way
-    # mds0.crash()
+    # for machine in machines:
+    #     if machine.is_up():
+    #         machine.execute("sync")
+
+    # Crash some redundant nodes
     monA.crash()
     osd0.crash()
-    # osd1.crash()
-    # osd2.crash()
-    # client.crash()
-    #
-    # # Start it up
-    # osd0.start()
-    # osd1.start()
-    # osd2.start()
-    # monA.start()
-    # mds0.start()
-    # client.start()
+    mds0.crash()
 
-    # Ensure the cluster comes back up again
-    # time.sleep(30)
     print(monB.succeed("ceph -s"))
     monB.wait_until_fails("ceph -s | grep HEALTH_OK")
     print(monB.succeed("ceph -s"))
@@ -296,19 +296,10 @@ in {
     monB.succeed("ceph -s | grep 'quorum ${cfg.monB.name},${cfg.monC.name} .*, out of quorum: ${cfg.monA.name}'")
     print(monB.succeed("ceph osd stat"))
     # monB.wait_until_succeeds("ceph osd stat | grep -e '3 osds: 2 up[^,]*, 3 in'")
-    print(monB.succeed("ceph -s"))
     print(monB.succeed("ceph -s | grep 'mgr: .*(active,'"))
-    print(monB.succeed("ceph -s"))
     monB.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mds0.name}=up'")
     print(monB.succeed("ceph -s"))
 
-    monB.wait_until_succeeds("ceph -s | grep HEALTH_WARN")
-
-    # TODO: The client should be able to recover if it stays up accross a ceph cluster restart?
-    # Re-Mount the filesystem
-    # client.succeed(
-    #     "mount -t ceph :/ /mnt/ceph -o name=foo",
-    # )
 
     # Client should still have the filesystem mounted and usable
     print(client.succeed("df -h /mnt/ceph"))
@@ -318,6 +309,50 @@ in {
         # Make sure we didn't lose anything from earlier
         "diff --recursive ${pkgs.ceph.out} /mnt/ceph/some_data",
     )
+
+
+    # Shut down ceph on all cluster machines in a very unpolite way
+    # mds0.crash()
+    # mds1.crash()
+    # monB.crash()
+    # monC.crash()
+    # osd1.crash()
+    # osd2.crash()
+    # # client.crash()
+    # #
+    # # Start it back up
+    # start_all()
+    #
+    # # Ensure the cluster comes back up again
+    # print(monA.succeed("ceph -s"))
+    # monA.wait_until_succeeds("ceph -s | grep -e HEALTH_OK -e HEALTH_WARN")
+    # print(monA.succeed("ceph -s"))
+    # # monA.wait_until_succeeds("ceph -s | grep 'osd: 3 osds: 3 up'")
+    # monA.succeed("ceph -s | grep 'mon: 3 daemons'")
+    # print(monA.succeed("ceph osd stat"))
+    # # monA.wait_until_succeeds("ceph osd stat | grep -e '3 osds: 3 up[^,]*, 3 in'")
+    # print(monA.succeed("ceph -s"))
+    # print(monA.succeed("ceph -s | grep 'mgr: .*(active,'"))
+    # print(monA.succeed("ceph -s"))
+    # monA.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mds0.name}=up'")
+    # print(monA.succeed("ceph -s"))
+    #
+    # monA.wait_until_succeeds("ceph -s | grep HEALTH_WARN")
+    #
+    # # TODO: The client should be able to recover if it stays up accross a ceph cluster restart?
+    # # Re-Mount the filesystem
+    # # client.succeed(
+    # #     "mount -t ceph :/ /mnt/ceph -o name=foo",
+    # # )
+    #
+    # # Client should still have the filesystem mounted and usable
+    # print(client.succeed("df -h /mnt/ceph"))
+    # print(client.succeed("ls -l /mnt/ceph"))
+    # client.succeed(
+    #     "echo world > /mnt/ceph/hello",
+    #     # Make sure we didn't lose anything from earlier
+    #     "diff --recursive ${pkgs.ceph.out} /mnt/ceph/some_data",
+    # )
   '';
 
 
