@@ -57,7 +57,7 @@ let
       enable = true;
       global = {
         fsid = cfg.clusterId;
-        monHost = cfg.monA.ip;
+        monHost = "${cfg.monA.ip} ${cfg.monB.ip} ${cfg.monC.ip}";
         monInitialMembers = cfg.monA.name;
         # Ideally, this should include all expected mons, but we can't have
         # others configured when bootstrapping.
@@ -78,11 +78,9 @@ let
   };
 
   monConfig = {name, ...}: {
-    networking = {
-      firewall = {
+    networking.firewall = {
         allowedTCPPorts = [ 6789 3300 ];
         allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
-      };
     };
     services.ceph = {
       mon = {
@@ -96,10 +94,8 @@ let
     }; };
 
   osdConfig = {name, ...}: {
-    networking = {
-      firewall = {
+    networking.firewall = {
         allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
-      };
     };
 
     services.ceph = {
@@ -111,22 +107,16 @@ let
   };
 
   mdsConfig= {name, ...}: {
-    services.ceph = {
-      mds = {
+    services.ceph.mds = {
         enable = true;
         daemons = [ name ];
       };
-    };
 
-    networking = {
-      firewall = {
+    networking.firewall = {
         allowedTCPPorts = [ 6789 3300 ];
         allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
-      };
     };
   };
-
-  cephConfigClient =  { };
 
 in {
   nodes = {
@@ -218,9 +208,9 @@ in {
         "systemctl start ceph-mds-${cfg.mds0.name}",
     )
     mds0.wait_for_unit("ceph-mds-${cfg.mds0.name}")
-    print(monA.succeed("ceph -s"))
+    # print(monA.succeed("ceph -s"))
     monA.wait_until_succeeds("ceph -s | grep 'mds: '")
-    print(monA.succeed("ceph -s"))
+    # print(monA.succeed("ceph -s"))
     monA.wait_until_succeeds("ceph -s | grep HEALTH_OK")
 
     # Create a ceph filesystem
@@ -231,7 +221,7 @@ in {
         "ceph fs new cephfs cephfs_metadata cephfs_data",
         "ceph fs authorize cephfs client.foo / rw >/tmp/shared/ceph.client.foo.keyring",
     )
-    print(monA.succeed("ceph -s"))
+    # print(monA.succeed("ceph -s"))
 
     # Mount the filesystem
     client.succeed(
@@ -271,14 +261,18 @@ in {
     )
     monC.wait_for_unit("ceph-mon-${cfg.monC.name}")
     monC.wait_for_unit("ceph-mgr-${cfg.monC.name}")
-    print(monA.succeed("ceph -s"))
+    # print(monA.succeed("ceph -s"))
     monA.wait_until_succeeds("ceph -s | grep 'mon: 3 daemons'")
     print(monA.succeed("ceph -s"))
-    monA.wait_until_succeeds("ceph -s | grep 'mgr: a(active, since .*), standbys: b, c'")
+    monA.wait_until_succeeds("ceph -s | grep 'mgr: .(active, since .*), standbys: ., .'")
+
+    # Let's not lose the admin key for now. I'm not sure how to recover it if lost.
+    monA.succeed("cp /etc/ceph/ceph.client.admin.keyring /tmp/shared/")
+    monB.succeed("cp /tmp/shared/ceph.client.admin.keyring /etc/ceph/")
 
     # Shut down ceph on all cluster machines in a very unpolite way
     # mds0.crash()
-    # monA.crash()
+    monA.crash()
     osd0.crash()
     # osd1.crash()
     # osd2.crash()
@@ -293,16 +287,22 @@ in {
     # client.start()
 
     # Ensure the cluster comes back up again
-    monA.succeed("ceph -s | grep 'mon: 3 daemons'")
-    monA.wait_until_succeeds("ceph -s | grep 'quorum ${cfg.monA.name}'")
-    monA.wait_until_succeeds("ceph osd stat | grep -e '3 osds: 3 up[^,]*, 3 in'")
-    print(monA.succeed("ceph -s"))
-    print(monA.wait_until_succeeds("ceph -s | grep 'mgr: ${cfg.monA.name}(active,'"))
-    print(monA.succeed("ceph -s"))
-    monA.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mds0.name}=up'")
-    print(monA.succeed("ceph -s"))
+    # time.sleep(30)
+    print(monB.succeed("ceph -s"))
+    monB.wait_until_fails("ceph -s | grep HEALTH_OK")
+    print(monB.succeed("ceph -s"))
+    monB.wait_until_succeeds("ceph -s | grep 'osd: 3 osds: 2 up'")
+    monB.succeed("ceph -s | grep 'mon: 3 daemons'")
+    monB.succeed("ceph -s | grep 'quorum ${cfg.monB.name},${cfg.monC.name} .*, out of quorum: ${cfg.monA.name}'")
+    print(monB.succeed("ceph osd stat"))
+    # monB.wait_until_succeeds("ceph osd stat | grep -e '3 osds: 2 up[^,]*, 3 in'")
+    print(monB.succeed("ceph -s"))
+    print(monB.succeed("ceph -s | grep 'mgr: .*(active,'"))
+    print(monB.succeed("ceph -s"))
+    monB.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mds0.name}=up'")
+    print(monB.succeed("ceph -s"))
 
-    monA.wait_until_succeeds("ceph -s | grep HEALTH_WARN")
+    monB.wait_until_succeeds("ceph -s | grep HEALTH_WARN")
 
     # TODO: The client should be able to recover if it stays up accross a ceph cluster restart?
     # Re-Mount the filesystem
@@ -314,7 +314,7 @@ in {
     print(client.succeed("df -h /mnt/ceph"))
     print(client.succeed("ls -l /mnt/ceph"))
     client.succeed(
-        # "echo hello > /mnt/ceph/world",
+        "echo hello > /mnt/ceph/world",
         # Make sure we didn't lose anything from earlier
         "diff --recursive ${pkgs.ceph.out} /mnt/ceph/some_data",
     )
