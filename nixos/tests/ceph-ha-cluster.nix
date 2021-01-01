@@ -124,6 +124,7 @@ in {
     mds0 = mdsConfig cfg.mds0;
     mds1 = mdsConfig cfg.mds1;
     client = generateHost cfg.alice { };
+    bob = generateHost cfg.bob { };
   };
 
   # Following deployment is based on the manual deployment described here:
@@ -194,19 +195,17 @@ in {
 
 
     def add_mds(mds, name):
+        global admin
         admin.succeed(
             f"ceph auth get-or-create mds.{name} mon 'allow rwx' osd 'allow *' mds 'allow *' mgr 'allow profile mds' -o /tmp/shared/ceph-{name}-keyring",
         )
         mds.succeed(
             f"mkdir -p /var/lib/ceph/mds/ceph-{name}",
             f"cp /tmp/shared/ceph-{name}-keyring /var/lib/ceph/mds/ceph-{name}/keyring",
-            # "chown",
             f"systemctl start ceph-mds-{name}",
         )
         mds.wait_for_unit(f"ceph-mds-{name}")
-        print(admin.succeed("ceph -s"))
         admin.wait_until_succeeds("ceph -s | grep 'mds: '")
-        print(admin.succeed("ceph -s"))
         admin.wait_until_succeeds("ceph -s | grep HEALTH_OK")
 
 
@@ -216,26 +215,52 @@ in {
     # Create a ceph filesystem
     # Based on https://docs.ceph.com/en/latest/cephfs/createfs/
     admin.succeed(
-        "ceph osd pool create cephfs_data",
         "ceph osd pool create cephfs_metadata",
+        "ceph osd pool create cephfs_data",
         "ceph fs new cephfs cephfs_metadata cephfs_data",
-        "ceph fs authorize cephfs client.alice / rw >/tmp/shared/ceph.client.alice.keyring",
+        # rwp needed for setfattr per https://www.spinics.net/lists/ceph-users/msg44594.html
+        "ceph fs authorize cephfs client.alice / rwp >/tmp/shared/ceph.client.alice.keyring",
+        "ceph fs authorize cephfs client.bob / rw >/tmp/shared/ceph.client.bob.keyring",
     )
-    # print(admin.succeed("ceph -s"))
 
     # Add a standby MDS
     add_mds(mds1, "${cfg.mds1.name}")
     admin.wait_until_succeeds("ceph -s | grep 'mds: .*up:active.* up:standby'")
 
-    # Mount the filesystem
+    # Mount the filesystem with the kernel driver
     client.succeed(
-        "cp /tmp/shared/ceph.client.alice.keyring /etc/ceph/ceph.client.alice.keyring",
+        "cp /tmp/shared/ceph.client.alice.keyring /etc/ceph/",
         "mkdir -p /mnt/ceph",
         "mount -t ceph :/ /mnt/ceph -o name=alice",
         "ls -l /mnt/ceph",
         "cp -a ${pkgs.ceph.out} /mnt/ceph/some_data",
         "df -h /mnt/ceph",
     )
+
+    # Mount the filesystem with ceph-fuse
+    bob.succeed(
+        "cp /tmp/shared/ceph.client.bob.keyring /etc/ceph/",
+        "mkdir -p /mnt/ceph",
+        "ceph-fuse --id bob /mnt/ceph",
+        "ls -l /mnt/ceph",
+        "cp -a ${pkgs.ceph.out} /mnt/ceph/more_data",
+        "df -h /mnt/ceph",
+    )
+
+    # Test erasure coding
+    # https://docs.ceph.com/en/latest/rados/operations/erasure-code/
+    admin.succeed(
+        "ceph osd pool create cephfs_ec erasure",
+        "ceph osd pool set cephfs_ec allow_ec_overwrites true",
+        "ceph fs add_data_pool cephfs cephfs_ec",
+    )
+    client.succeed(
+        "mkdir /mnt/ceph/ec",
+        "setfattr -n ceph.dir.layout.pool -v cephfs_ec /mnt/ceph/ec",
+        "cp -a ${pkgs.ceph.out} /mnt/ceph/ec",
+    )
+    print(admin.succeed("ceph fs ls"))
+    print(admin.succeed("ceph df"))
 
 
     # Based on https://docs.ceph.com/en/latest/rados/operations/add-or-rm-mons/
@@ -261,9 +286,7 @@ in {
     add_mon_mgr(monB, "${cfg.monB.name}")
     add_mon_mgr(monC, "${cfg.monC.name}")
 
-    # print(admin.succeed("ceph -s"))
     admin.wait_until_succeeds("ceph -s | grep 'mon: 3 daemons'")
-    print(admin.succeed("ceph -s"))
     admin.wait_until_succeeds("ceph -s | grep 'mgr: .(active, since .*), standbys: ., .'")
 
     # Let's not lose the admin key for now. I'm not sure how to recover it if lost.
@@ -278,20 +301,18 @@ in {
     monA.crash()
     osd0.crash()
     mds0.crash()
-    del monA, osd0, mds0
 
     admin = monB
-    print(admin.succeed("ceph -s"))
     admin.wait_until_fails("ceph -s | grep HEALTH_OK")
     print(admin.succeed("ceph -s"))
     admin.wait_until_succeeds("ceph -s | grep 'osd: 3 osds: 2 up'")
     admin.succeed("ceph -s | grep 'mon: 3 daemons'")
     admin.succeed("ceph -s | grep 'quorum ${cfg.monB.name},${cfg.monC.name} .*, out of quorum: ${cfg.monA.name}'")
     print(admin.succeed("ceph osd stat"))
+    print(admin.succeed("ceph pg stat"))
     # admin.wait_until_succeeds("ceph osd stat | grep -e '3 osds: 2 up[^,]*, 3 in'")
     print(admin.succeed("ceph -s | grep 'mgr: .*(active,'"))
     admin.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mds1.name}=up'")
-    print(admin.succeed("ceph -s"))
 
 
     # Client should still have the filesystem mounted and usable
