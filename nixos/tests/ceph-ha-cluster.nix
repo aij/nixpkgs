@@ -45,7 +45,7 @@ let
   };
   commonConfig = {
     virtualisation = {
-      memorySize = 512;
+      memorySize = 1024;
       vlans = [ 1 ];
     };
 
@@ -53,6 +53,7 @@ let
       bash
       sudo
       ceph
+      cryptsetup # needed for --dmcrypt. Perhaps ceph should depend on it directly.
     ];
 
     services.ceph = {
@@ -179,7 +180,7 @@ in {
     def add_osd(osd, name):
         osd.succeed(
             "cp -r /tmp/shared/bootstrap-osd /var/lib/ceph/",
-            "ceph-volume lvm create --no-systemd --data /dev/vdb",
+            "ceph-volume lvm create --no-systemd --bluestore --data /dev/vdb --dmcrypt",
             f"systemctl start ceph-osd-{name}",
         )
 
