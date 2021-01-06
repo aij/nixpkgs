@@ -53,7 +53,6 @@ let
       bash
       sudo
       ceph
-      cryptsetup # needed for --dmcrypt. Perhaps ceph should depend on it directly.
     ];
 
     services.ceph = {
@@ -94,18 +93,22 @@ let
         enable = true;
         daemons = [ c.name ];
       };
-    }; };
+    };
+  };
 
   osdConfig = c: generateHost c {
     services.ceph.osd = {
       enable = true;
       daemons = [ c.name ];
     };
+    environment.systemPackages = with pkgs; [
+      cryptsetup # needed for --dmcrypt. Perhaps ceph should depend on it directly.
+    ];
     networking.firewall.allowedTCPPortRanges = [ { from = 6800; to = 7300; } ];
     virtualisation.emptyDiskImages = [ 20480 ];
   };
 
-  mdsConfig= c: generateHost c {
+  mdsConfig = c: generateHost c {
     services.ceph.mds = {
       enable = true;
       daemons = [ c.name ];
@@ -124,7 +127,7 @@ in {
     osd2 = osdConfig cfg.osd2;
     mds0 = mdsConfig cfg.mds0;
     mds1 = mdsConfig cfg.mds1;
-    client = generateHost cfg.alice { };
+    alice = generateHost cfg.alice { };
     bob = generateHost cfg.bob { };
   };
 
@@ -228,42 +231,6 @@ in {
     add_mds(mds1, "${cfg.mds1.name}")
     admin.wait_until_succeeds("ceph -s | grep 'mds: .*up:active.* up:standby'")
 
-    # Mount the filesystem with the kernel driver
-    client.succeed(
-        "cp /tmp/shared/ceph.client.alice.keyring /etc/ceph/",
-        "mkdir -p /mnt/ceph",
-        "mount -t ceph :/ /mnt/ceph -o name=alice",
-        "ls -l /mnt/ceph",
-        "cp -a ${pkgs.ceph.out} /mnt/ceph/some_data",
-        "df -h /mnt/ceph",
-    )
-
-    # Mount the filesystem with ceph-fuse
-    bob.succeed(
-        "cp /tmp/shared/ceph.client.bob.keyring /etc/ceph/",
-        "mkdir -p /mnt/ceph",
-        "ceph-fuse --id bob /mnt/ceph",
-        "ls -l /mnt/ceph",
-        "cp -a ${pkgs.ceph.out} /mnt/ceph/more_data",
-        "df -h /mnt/ceph",
-    )
-
-    # Test erasure coding
-    # https://docs.ceph.com/en/latest/rados/operations/erasure-code/
-    admin.succeed(
-        "ceph osd pool create cephfs_ec erasure",
-        "ceph osd pool set cephfs_ec allow_ec_overwrites true",
-        "ceph fs add_data_pool cephfs cephfs_ec",
-    )
-    client.succeed(
-        "mkdir /mnt/ceph/ec",
-        "setfattr -n ceph.dir.layout.pool -v cephfs_ec /mnt/ceph/ec",
-        "cp -a ${pkgs.ceph.out} /mnt/ceph/ec",
-    )
-    print(admin.succeed("ceph fs ls"))
-    print(admin.succeed("ceph df"))
-
-
     # Based on https://docs.ceph.com/en/latest/rados/operations/add-or-rm-mons/
     def add_mon_mgr(mon, name):
         admin.succeed(
@@ -292,11 +259,51 @@ in {
 
     # Let's not lose the admin key for now. I'm not sure how to recover it if lost.
     admin.succeed("cp /etc/ceph/ceph.client.admin.keyring /tmp/shared/")
-    monB.succeed("cp /tmp/shared/ceph.client.admin.keyring /etc/ceph/")
+    monB.succeed(
+        "cp /tmp/shared/ceph.client.admin.keyring /etc/ceph/",
+        "sync",
+    )
 
-    # for machine in machines:
-    #     if machine.is_up():
-    #         machine.execute("sync")
+    # Simulate everything has had enough time to settle since cluster bootstrapping.
+    for machine in machines:
+        if machine.is_up():
+            machine.execute("sync")
+
+
+    # Mount the filesystem with the kernel driver
+    alice.succeed(
+        "cp /tmp/shared/ceph.client.alice.keyring /etc/ceph/",
+        "mkdir -p /mnt/ceph",
+        "mount -t ceph :/ /mnt/ceph -o name=alice",
+        "ls -l /mnt/ceph",
+        "cp -a ${pkgs.ceph.out} /mnt/ceph/some_data",
+        "df -h /mnt/ceph",
+    )
+
+    # Mount the filesystem with ceph-fuse
+    bob.succeed(
+        "cp /tmp/shared/ceph.client.bob.keyring /etc/ceph/",
+        "mkdir -p /mnt/ceph",
+        "ceph-fuse --id bob /mnt/ceph",
+        "ls -l /mnt/ceph",
+        "cp -a ${pkgs.ceph.out} /mnt/ceph/more_data",
+        "df -h /mnt/ceph",
+    )
+
+    # Test erasure coding
+    # https://docs.ceph.com/en/latest/rados/operations/erasure-code/
+    admin.succeed(
+        "ceph osd pool create cephfs_ec erasure",
+        "ceph osd pool set cephfs_ec allow_ec_overwrites true",
+        "ceph fs add_data_pool cephfs cephfs_ec",
+    )
+    alice.succeed(
+        "mkdir /mnt/ceph/ec",
+        "setfattr -n ceph.dir.layout.pool -v cephfs_ec /mnt/ceph/ec",
+        "cp -a ${pkgs.ceph.out} /mnt/ceph/ec/some_data",
+    )
+    print(admin.succeed("ceph fs ls"))
+    print(admin.succeed("ceph df"))
 
     # Crash some redundant nodes
     monA.crash()
@@ -315,59 +322,16 @@ in {
     print(admin.succeed("ceph -s | grep 'mgr: .*(active,'"))
     admin.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mds1.name}=up'")
 
-
     # Client should still have the filesystem mounted and usable
-    print(client.succeed("df -h /mnt/ceph"))
-    print(client.succeed("ls -l /mnt/ceph"))
-    client.succeed(
+    print(alice.succeed("df -h /mnt/ceph"))
+    print(alice.succeed("ls -l /mnt/ceph"))
+    alice.succeed(
         "echo hello > /mnt/ceph/world",
         # Make sure we didn't lose anything from earlier
         "diff --recursive ${pkgs.ceph.out} /mnt/ceph/some_data",
+        "diff --recursive ${pkgs.ceph.out} /mnt/ceph/more_data",
+        "diff --recursive ${pkgs.ceph.out} /mnt/ceph/ec/some_data",
     )
-
-
-    # Shut down ceph on all cluster machines in a very unpolite way
-    # mds0.crash()
-    # mds1.crash()
-    # monB.crash()
-    # monC.crash()
-    # osd1.crash()
-    # osd2.crash()
-    # # client.crash()
-    # #
-    # # Start it back up
-    # start_all()
-    #
-    # # Ensure the cluster comes back up again
-    # print(admin.succeed("ceph -s"))
-    # admin.wait_until_succeeds("ceph -s | grep -e HEALTH_OK -e HEALTH_WARN")
-    # print(admin.succeed("ceph -s"))
-    # # admin.wait_until_succeeds("ceph -s | grep 'osd: 3 osds: 3 up'")
-    # admin.succeed("ceph -s | grep 'mon: 3 daemons'")
-    # print(admin.succeed("ceph osd stat"))
-    # # admin.wait_until_succeeds("ceph osd stat | grep -e '3 osds: 3 up[^,]*, 3 in'")
-    # print(admin.succeed("ceph -s"))
-    # print(admin.succeed("ceph -s | grep 'mgr: .*(active,'"))
-    # print(admin.succeed("ceph -s"))
-    # admin.wait_until_succeeds("ceph -s | grep 'mds: cephfs:1.*=${cfg.mds0.name}=up'")
-    # print(admin.succeed("ceph -s"))
-    #
-    # admin.wait_until_succeeds("ceph -s | grep HEALTH_WARN")
-    #
-    # # TODO: The client should be able to recover if it stays up accross a ceph cluster restart?
-    # # Re-Mount the filesystem
-    # # client.succeed(
-    # #     "mount -t ceph :/ /mnt/ceph -o name=alice",
-    # # )
-    #
-    # # Client should still have the filesystem mounted and usable
-    # print(client.succeed("df -h /mnt/ceph"))
-    # print(client.succeed("ls -l /mnt/ceph"))
-    # client.succeed(
-    #     "echo world > /mnt/ceph/hello",
-    #     # Make sure we didn't lose anything from earlier
-    #     "diff --recursive ${pkgs.ceph.out} /mnt/ceph/some_data",
-    # )
   '';
 
 
