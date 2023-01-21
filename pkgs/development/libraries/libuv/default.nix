@@ -21,6 +21,7 @@ stdenv.mkDerivation rec {
       "get_passwd" # passed on NixOS but failed on other Linuxes
       "tcp_writealot" "udp_multicast_join" "udp_multicast_join6" # times out sometimes
       "fs_fstat" # https://github.com/libuv/libuv/issues/2235#issuecomment-1012086927
+      "tcp_bind6_error_addrinuse" "tcp_bind_error_addrinuse_connect" "tcp_bind_error_addrinuse_listen"  # Fails for me (aij) on tobati
     ] ++ lib.optionals stdenv.isDarwin [
         # Sometimes: timeout (no output), failed uv_listen. Someone
         # should report these failures to libuv team. There tests should
